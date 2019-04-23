@@ -1,0 +1,230 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[french]{babel} 
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xspace}
+\usepackage{palatino}
+\usepackage[]{hyperref} 
+\hypersetup{
+  allbordercolors=0 0 1,
+  colorlinks=true,
+  urlcolor=blue
+}
+
+
+\usepackage{enumitem}
+\setlist[itemize]{label={\textbullet}}
+\setlist{nolistsep}
+
+
+\usepackage[paper=a4paper, hmargin=1cm, vmargin=1cm]{geometry}
+\usepackage{fancyhdr}
+\pagestyle{empty}
+
+\usepackage{xcolor}
+
+\definecolor{gris10}{rgb}{0.75,0.75,0.75}
+\definecolor{gris60}{rgb}{0.60,0.60,0.60}
+\definecolor{gris80}{rgb}{0.40,0.40,0.40}
+\definecolor{MSBlue}{rgb}{.204,.353,.541}
+\definecolor{MSLightBlue}{rgb}{.31,.506,.741}
+\definecolor{LinkRed}{rgb}{.686,.231,.49}
+
+\newcommand{\hrs}{\textcolor{gris80}{\rule{24pt}{0.5pt}}}
+\newcommand{\hr}{\textcolor{gris80}{\rule{\linewidth}{0.5pt}}}
+
+\hypersetup{
+      pdfauthor   = {Romuald THION},%
+      pdftitle    = {Curriculum Vitae - Romuald THION},%
+      pdfsubject  = {Compétences, emplois et formations},%
+      pdfkeywords = {informatique, science, recherche scientifique, enseignement, maître de conférences, bases de données, sécurité, big data, modélisation, université}%
+}
+
+
+\usepackage{titlesec}
+\titleformat{\section}{\centering\huge\bfseries\color{MSBlue}}{\thesection}{1em}{}
+\titlespacing{\section}{0pt}{0pt}{0em}
+\titleformat{\subsection}{\large\bfseries\color{MSLightBlue}\MakeUppercase}{\thesubsection}{1em}{}
+\titlespacing{\subsection}{0pt}{16pt}{0em}
+\titlespacing{\subsubsection}{0pt}{6pt}{0em}
+
+\newcommand{\activite}[1]{\textbf{#1}\xspace}
+\newcommand{\comment}[1]{\textsl{#1}\xspace}
+
+
+\newcommand{\ECO}{E. \textsc{Coquery}\xspace}
+\newcommand{\MPL}{M. \textsc{Plantevit}\xspace}  
+\newcommand{\INSAL}{\textsc{Insa de Lyon}\xspace}
+\newcommand{\INRIARA}{\textsc{Inria Grenoble -- Rh\^one-Alpes}\xspace}
+\newcommand{\UCBL}{\textsc{Universit{\'e} Claude Bernard Lyon 1}\xspace}
+\newcommand{\LIRIS}{\textsc{Liris}\xspace}
+\newcommand{\ATER}{\textsc{ater}\xspace} 
+\newcommand{\TIW}{\textsc{m2tiw}\xspace}
+\newcommand{\MIF}{\textsc{master}\xspace}
+\newcommand{\LIC}{\textsc{licence}\xspace}
+
+\begin{document}
+\hr
+
+\vspace{0.5em}
+
+\begin{minipage}[c]{0.5\textwidth}
+  \begin{center}
+    {\LARGE\textsc{Romuald Thion}}\\
+    Docteur-ingénieur en informatique\\
+  \end{center}
+\end{minipage}
+\begin{minipage}[c]{0.5\textwidth}
+  \begin{center}
+    \href{mailto:romuald.thion@gmail.com}{\nolinkurl{romuald.thion@gmail.com}}\\
+    \href{https://github.com/romulusFR/}{\nolinkurl{https://github.com/romulusFR/}}\\
+    Téléphone : 06.70.12.76.88\\
+  \end{center}
+\end{minipage}
+
+\vspace{0.5em}
+
+\hr
+
+\begin{center}
+  \emph{Maître de conférences en informatique depuis 2010, je suis spécialisé dans la modélisation formelle de la gestion de données, de la sécurité et de la vie privée, sujets que j'ai conjugués en formation et en recherche.}
+
+  \emph{Je suis aujourd'hui à la recherche de nouveaux horizons professionnels dans le secteur privé, orienté vers le développement de très haut niveau, la recherche et le développement, la valorisation et le transfert scientifique.}
+\end{center}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Compétences}
+
+  \activite{Recherche :}
+  \comment{concevoir et réaliser un projet de recherche, réaliser un état de l'art scientifique, communiquer des résultats scientifiques à l'oral et à l'écrit en anglais ou en français.}
+
+  \activite{Formation :}
+  \comment{concevoir, organiser et animer tous types d'activités de formation en informatique, pour tous les publics du supérieur, gérer une formation du supérieur.}
+
+  \activite{Fondamentaux :}
+  \comment{modéliser et formaliser un problème, fondements des bases de données au sens large, informatique fondamentale (logique, théorie des langages, $\lambda$-calcul, etc.).}
+
+  \activite{Bases de données :}
+  \comment{SQL, PL/pgSQL, PostgreSQL, MongoDB, RDF/Sparql, PostGIS.}
+
+  \activite{Programmation :}
+  \comment{Web/JavaScript (Node.js, Express), Haskell, Coq Proof Assistant, C++.}
+
+  \activite{Sécurité informatique :}
+  \comment{gestion des droits, \textsc{Ebios}, exploitation, cryptographie, réseaux.}
+
+  \activite{Communication :}
+  \comment{gestion éditoriale Web, conception de vidéo, conception de supports \emph{print}.}
+
+  \activite{Autres:}
+  \comment{Linux, \LaTeX.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Emplois} 
+
+  \activite{Depuis 2010 Maître de conférences à l'\UCBL.}\\
+  \comment{Enseignant--chercheur au département informatique de la Faculté de Sciences et Technologies.} 
+  
+  \activite{2008--2010 Postdoctorant à \INRIARA.}\\
+  \comment{Modélisation formelle de politiques de protection de la vie privée et de contrats.} 
+  
+  \activite{2007--2008 Attaché Temporaire d'Enseignement et de Recherche (\ATER) à l'\INSAL.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Diplômes}
+
+     \activite{2008 Doctorat en informatique de l'\INSAL.}\\
+    \comment{\href{https://www.theses.fr/131879375}{Structuration relationnelle des politiques de contrôle d'accès}, direction \textsc{A. Flory} et S. \textsc{Coulondre}.}
+    
+   \activite{2004 Diplôme d'Études Approfondies (DEA) en informatique de l'\INSAL}
+    \comment{(rang 1\ier/55).}
+
+    \activite{2004 Diplôme d'ingénieur en informatique de l'\INSAL.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Autres}
+
+  \activite{Langues :}
+  \comment{Français (langue maternelle), Anglais (courant), Italien (bases).}
+
+  \activite{Permis :}
+  \comment{B (Juillet 1999), véhiculé.}
+
+  \activite{Loisirs :}
+  \comment{cuisine, jeux vidéos (FPS, RPG, stratégie, gestion), tours de cartes, lecture (anticipation, science-fiction, politique), guitare électrique.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\clearpage
+
+\subsection*{Activités de formation au \href{https://fst-informatique.univ-lyon1.fr/}{département Informatique}}
+%Depuis 2010, j'ai assuré plus de 2800 heures de formation en informatique de la licence au master.
+
+\activite{Responsabilités de formation}
+
+  \begin{itemize}
+    \item Parcours de Master 2 \href{http://master-info.univ-lyon1.fr/TIW/}{\emph{Technologies de l'Information et Web}} (\TIW) depuis 2016\\
+     \comment{Mise en place de l'alternance dans le parcours  \TIW}
+
+    \item Module \href{https://perso.liris.cnrs.fr/rthion/dokuwiki/enseignement:tiw4}{\emph{Sécurité des systèmes d'information}} (\TIW) depuis 2010
+    
+    \item Module \href{https://perso.liris.cnrs.fr/rthion/dokuwiki/enseignement:tiw5}{\emph{Projet TIW}} (\TIW) depuis 2010, avec \ECO
+
+    \item Module \href{https://perso.liris.cnrs.fr/rthion/dokuwiki/enseignement:lifap5:start}{\emph{Programmation fonctionnelle pour le Web}} (\LIC) depuis 2016, avec \ECO
+    
+    \item Module \href{https://www.youtube.com/channel/UCp6q0_DxUdNXhoc2Oue1w9g/}{\emph{Bases de données avancées}} en classe inversé, (\LIC), 2013--2016, avec \MPL
+
+    \item {Plate-forme TP \texttt{MongoDB}} pour  \href{https://perso.liris.cnrs.fr/romuald.thion/files/Enseignement/MIF04/}{\emph{Gestion de données pour le Web}} (\MIF)
+    
+    \item Plate-forme TP \texttt{Coq} pour  \href{https://perso.liris.cnrs.fr/ecoquery/dokuwiki/doku.php?id=enseignement:logique:start}{\emph{Logique Classique}} (\LIC)
+    
+    \item Module \href{https://gonnord.gitlabpages.inria.fr/diu-lyon/bloc1/WEB/README-slides.html}{\emph{programmation Web}} du DIU Enseigner l'Information au lycée Lyon 1
+
+  \end{itemize}
+
+\activite{Autres activités} \comment{relations partenariales, responsable de la communication du département Informatique 2012--2018, élu au conseil du département Informatique 2014--2018 et 2018--2022, élu au Conseil Académique de l'université depuis 2019.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+\subsection*{Activités de recherche au laboratoire \href{https://liris.cnrs.fr/}{\LIRIS}}
+
+\activite{Co-encadrements de thèses} 
+    \begin{itemize}
+      \item \emph{\href{https://www.theses.fr/2014LYO10124}{Approches pour la gestion de configurations de sécurité dans les systèmes d'information distribués}}, par M. \textsc{Casalino}, avec M.-S. \textsc{Hacid}, soutenance 2014.
+      \item \emph{\href{https://www.theses.fr/2016LYSE1156}{Selective disclosure and inference leakage problem in the Linked Data}}, par T. \textsc{Sayah}, avec M.-S. \textsc{Hacid} et \ECO, soutenance 2016.
+      \item \href{https://perso.liris.cnrs.fr/remy.delanaux/research.html}{\emph{Intégration de données liées respectueuse de la confidentialité}}, par R. \textsc{Delanaux}, avec A. \textsc{Bonifati} et M.-C. \textsc{Rousset}, soutenance prévue fin 2019.
+    \end{itemize}
+  
+
+\activite{Publications internationales 2015--2019} \comment{(\href{{https://dblp.org/pers/hd/t/Thion:Romuald}}{liste complète})}
+  \begin{itemize}
+    \item \href{https://hal.archives-ouvertes.fr/hal-01896276/}{\emph{Query-Based Linked Data Anonymization}}, avec \textsc{R. Delanaux, A. Bonifati, M.-C. Rousset},
+          \href{http://iswc2018.semanticweb.org/}{International Semantic Web Conference 2018} (CORE'18 A)
+
+    \item \href{https://hal.archives-ouvertes.fr/hal-01548855/}{\emph{Interactive Mapping Specification with Exemplar Tuples}}, avec \textsc{A. Bonifati, U. Comignani, E. Coquery},
+          \href{https://sigmod2017.org/}{International Conference on Management of Data 2017} (CORE'17 A*)
+          
+    \item \href{https://hal.archives-ouvertes.fr/hal-01371530}{\emph{Access Control Enforcement for Selective Disclosure of Linked Data}}, avec \textsc{T. Sayah, E. Coquery, M.-S. Hacid}, 
+\href{http://stm2016.ics.forth.gr/}{International Workshop on Security and Trust Management 2016}
+ 
+    \item \href{https://hal.archives-ouvertes.fr/hal-01192900v1}{\emph{Tuple-based access control: a provenance-based information flow control for relational data}}, avec \textsc{F. Lesueur, M. Ben-Ghorbel-Talbi},
+ \href{http://www.sigapp.org/sac/sac2015/}{Security Track at the ACM SAC 2015} (CORE'14 B)
+ 
+
+    \item \href{https://hal.inria.fr/hal-01745813}{\emph{Inference Leakage Detection for Authorization Policies over RDF Data}}, avec \textsc{T. Sayah, E. Coquery, M.-S. Hacid}, 
+ \href{http://dbsec2015.di.unimi.it/}{Conference on Data and Applications Security and Privacy 2015} (CORE'14 A)
+  \end{itemize}
+
+\activite{Principales participations à des projets de recherche financés}  
+\begin{itemize}
+  \item ANR \href{http://datacert.lri.fr/}{Datacert} (2015--2019) \emph{Coq deep specification of privacy aware data integration} % , 440k€
+  \item ANR \href{https://project.inria.fr/smis/anr-kiss-dec-2011-dec-2015/}{KISS} (2011--2015) \emph{Keep your personal Information Safe and Secure} %, 840k€
+  \item ANR \href{https://projet.liris.cnrs.fr/dag/}{DAG} (2009--2013) \emph{Declarative Approaches for Enumerating Interesting Patterns}
+  \item PEPS CNRS INS2I \href{http://archives.cnrs.fr/ins2i/?r=discodol}{Discodol} (2016, porteur) \emph{Diffusion Sécurisée et Certifiée des Données Liées} %, 19k€
+    \item PUF \href{https://projet.liris.cnrs.fr/cyber/}{Cybersecurity Collaboratory} (2013--2018)
+\end{itemize}
+
+\activite{Autres activités} \comment{organisations des séminaires, comités de sélection, relations partenariales du laboratoire, comités de lecture, comités d'organisation de manifestations scientifiques}
+
+\end{document}
