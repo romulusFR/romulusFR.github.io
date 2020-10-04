@@ -1,0 +1,112 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[french]{babel} 
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xspace}
+\usepackage{palatino}
+\usepackage[]{hyperref} 
+\hypersetup{
+  allbordercolors=0 0 1,
+  colorlinks=true,
+  urlcolor=blue
+}
+
+\usepackage{enumitem}
+\setlist[itemize]{label={\textbullet}}
+\setlist{nolistsep}
+
+\usepackage[paper=a4paper, hmargin=1cm, vmargin=1cm]{geometry}
+\usepackage{fancyhdr}
+\pagestyle{empty}
+
+\usepackage{xcolor}
+
+\definecolor{gris10}{rgb}{0.75,0.75,0.75}
+\definecolor{gris60}{rgb}{0.60,0.60,0.60}
+\definecolor{gris80}{rgb}{0.40,0.40,0.40}
+\definecolor{MSBlue}{rgb}{.204,.353,.541}
+\definecolor{MSLightBlue}{rgb}{.31,.506,.741}
+\definecolor{LinkRed}{rgb}{.686,.231,.49}
+
+\newcommand{\hrs}{\textcolor{gris80}{\rule{24pt}{0.5pt}}}
+\newcommand{\hr}{\textcolor{gris80}{\rule{\linewidth}{0.5pt}}}
+
+\hypersetup{
+      pdfauthor   = {Romuald THION},%
+      pdftitle    = {Curriculum Vitae - Romuald THION},%
+      pdfsubject  = {Compétences, emplois et formations},%
+      pdfkeywords = {informatique, science, recherche scientifique, enseignement, maître de conférences, bases de données, sécurité, big data, modélisation, université}%
+}
+
+\usepackage{titlesec}
+\titleformat{\section}{\centering\huge\bfseries\color{MSBlue}}{\thesection}{1em}{}
+\titlespacing{\section}{0pt}{0pt}{0em}
+\titleformat{\subsection}{\large\bfseries\color{MSLightBlue}\MakeUppercase}{\thesubsection}{1em}{}
+\titlespacing{\subsection}{0pt}{16pt}{0em}
+\titlespacing{\subsubsection}{0pt}{6pt}{0em}
+
+\newcommand{\activite}[1]{\textbf{#1}\xspace}
+\newcommand{\comment}[1]{\textsl{#1}\xspace}
+
+
+\newcommand{\ECO}{E. \textsc{Coquery}\xspace}
+\newcommand{\MPL}{M. \textsc{Plantevit}\xspace}  
+\newcommand{\INSAL}{\textsc{Insa de Lyon}\xspace}
+\newcommand{\INRIARA}{\textsc{Inria Grenoble -- Rh\^one-Alpes}\xspace}
+\newcommand{\UCBL}{\textsc{Universit{\'e} Claude Bernard Lyon 1}\xspace}
+\newcommand{\LIRIS}{\textsc{Liris}\xspace}
+\newcommand{\ATER}{\textsc{ater}\xspace} 
+\newcommand{\TIW}{\textsc{m2tiw}\xspace}
+\newcommand{\MIF}{\textsc{master}\xspace}
+\newcommand{\LIC}{\textsc{licence}\xspace}
+
+\begin{document}
+\hr
+
+\vspace{0.5em}
+
+\begin{minipage}[c]{0.5\textwidth}
+  \begin{center}
+    {\LARGE\textsc{Romuald Thion}}\\
+    Docteur-ingénieur en informatique\\
+  \end{center}
+\end{minipage}
+\begin{minipage}[c]{0.5\textwidth}
+  \begin{center}
+    \href{mailto:romuald.thion@gmail.com}{\nolinkurl{romuald.thion@gmail.com}}\\
+    \href{https://github.com/romulusFR/}{\nolinkurl{https://github.com/romulusFR/}}\\
+    \href{https://liris.cnrs.fr/romuald.thion/}{\nolinkurl{https://liris.cnrs.fr/romuald.thion/}}
+  \end{center}
+\end{minipage}
+
+\vspace{0.5em}
+
+\hr
+
+\begin{center}
+  \emph{Maître de conférences en informatique depuis 2010, je suis spécialiste de gestion des données, de sécurité et de protection de la vie privée, sujets que j'ai conjugués en formation et en recherche.}
+\end{center}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Emplois} 
+
+    \activite{Depuis 2010 Maître de conférences à l'\UCBL.}\\
+    \comment{Enseignant--chercheur au département informatique de la Faculté de Sciences et Technologies.} 
+    
+    \activite{2008--2010 Postdoctorant à \INRIARA.}\\
+    \comment{Modélisation formelle de politiques de protection de la vie privée et de contrats.} 
+    
+    \activite{2007--2008 Attaché Temporaire d'Enseignement et de Recherche (\ATER) à l'\INSAL.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Diplômes}
+
+    \activite{2008 Doctorat en informatique de l'\INSAL.}\\
+    \comment{\href{https://www.theses.fr/131879375}{Structuration relationnelle des politiques de contrôle d'accès}, direction \textsc{A. Flory} et S. \textsc{Coulondre}.}
+
+    \activite{2004 Diplôme d'Études Approfondies (DEA) en informatique de l'\INSAL}
+    \comment{(rang 1\ier/55).}
+
+    \activite{2004 Diplôme d'ingénieur en informatique de l'\INSAL.}
+
+\end{document}
