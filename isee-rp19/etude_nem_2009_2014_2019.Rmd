@@ -1,20 +1,26 @@
 ---
-date: 2022-12-08
+date: Décembre 2022
+title: Projet CNRT Mines et Territoire
+author: THION Romuald, UNC
 output:
   html_document:
-    toc: false
+    toc: true
+    toc_depth: 3
     toc_float: true
+    theme: united
+    highlight: tango
+    css: custom.css
+
 ---
 
-# Etude sur l'évolution du niveau d'équipement des ménages (NEM) 2009 - 2014 - 2019
+# Evolution du niveau d'équipement des ménages NC
 
-Etude effectuée sur les bases individuelles et logements du recensement de la population de Nouvelle-Calédonie (NC), années 2009, 2014 et 2019.
-Réalisé par THION Romuald, maître de conférences en informatique à l'UNC, dans les locaux de l'ISEE pour le projet CNRT _Mine et Territoires_.
-L'acronymé **RP** (Recensement de Population) et sa décomposition en **BL** (Base Logements) et **BI** (Base Individus) sont utilisés dans la suite. 
+Cette étude porte sur le Niveau d'Equipement des Ménages (**NEM**) sur les Bases Individuelles (**BI**) et les Bases Logements (**BL**) du Recensement de la Population (**RP**) de Nouvelle-Calédonie (NC) sur les années 2009, 2014 et 2019.
+Cette étude est réalisé par THION Romuald, maître de conférences en informatique à l'UNC, dans les locaux de l'ISEE dans le cadre du projet CNRT _Mine et Territoires_ (**M&T**).
 
-## Préparation des données
+## Préparation et chargement des données
 
-```{r,include=FALSE}
+```{r init-libraries, include=FALSE}
 # installer les lib suivantes avec install.packages() si besoin
 library(tidyverse)
 library(foreign)
@@ -23,179 +29,167 @@ library(FactoMineR)
 library(MatchIt)
 
 set.seed(2022)
+
+
 `%notin%` <- Negate(`%in%`)
+
+# options de rendu knitr
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE,
+  fig.fullwidth = TRUE,
+  fig.height = 9,
+  fig.width = 16
+)
+
+# options de rendu générales dont figures
+options(
+  width = 120,
+  digits = 3
+)
+
+theme_set(
+  theme_light() %+replace%
+    theme(
+      panel.border = element_blank(),
+      axis.text.x = element_text(angle = 90),
+      legend.position = "right",
+    )
+)
 ```
 
-La conversion du format `dbf` fourni dans le format `csv` est réalisée par le script [`export_dbf_to_csv.R`](export_dbf_to_csv.R).
-On charge les bases individuelles des trois années, en ne gardant que les ménages qui sont des résidences principales `(CATL == 1)`.
-On crée la clef de jointure entre la BI et la BL comme la concaténation des variables suivantes dans cet ordre :
+Les sources de données suivantes sont utilisées dans cette étude :
 
-1. `NC` : code de la commune
-2. `DIST` : code district
-3. `RADR` : rang d'adresse
-4. `RLOG` : rang de logement
+- `src-iris/` : le shapefile des IRIS UNC09-14-19 créé par l'ISEE pour le projet M&T.
+- `src-communes/` : les limites administratives terrestres (BDADMIN-NC) des communes, [source](<https://georep-dtsi-sgt.opendata.arcgis.com/maps/limites-administratives-terrestres-1/about>). Le shapefile est chargé en SQL et enrichi avec l'information du type de site retenu dans le projet M&T (_centre_, _usine/métallurgique_ ou _témoin_). Un export CSV `communes.csv` permet d'avoir les noms correctement encodés.
+- `src-desserte/` : le calcul à partir de la BDROUTE-NC de la durée minimale/moyenne/médiane maximale à chacun des sites miniers, voir rapport technique consacré dans les livrables du projet. Les données sont ré-exportées dans le fichier `duree-iris.csv` dans un format utilisable facilement en R.
+- `src-rp/` : les BI et BL des RP 2009, 2014 et 2019 accompagnés de leurs dictionnaires de données fournis par l'ISEE. La conversion du format `dbf` dans le format `csv` est réalisée par le script [`export_dbf_to_csv.R`](export_dbf_to_csv.R) à exécuter une fois pour toutes.
 
-Enfin, on calcule le nombre de personnes majeures du logement de la BI.
-On pourra se servir de la BI et de la clef de jointure pour d'autres analyses éventuelles.
-Cette information est déjà dans la BL 2019 mais pas pour les autres points.
 
-```{r, results='hide', message=F, warning=F, cache=TRUE}
-bi09_raw <- read_csv2("./src-rp/BI2009.csv")
-bi14_raw <- read_csv2("./src-rp/BI2014.csv")
-bi19_raw <- read_csv2("./src-rp/BI2019.csv")
-# on oublie les erreurs
+On charge les BL des trois années, en ne gardant que les ménages qui sont des résidences principales (`filter(CATL == 1)`).
+On crée la clef de jointure `IDLOG` entre la BI et la BL comme la concaténation des variables suivantes, dans l'ordre :
 
-# concatenation des 4 variables séparées par des "-"
-bi09_raw$IDLOG <- paste(bi09_raw$NC, bi09_raw$DIST, bi09_raw$RADR, bi09_raw$RLOG, sep = "-")
-bi14_raw$IDLOG <- paste(bi14_raw$NC, bi14_raw$DIST, bi14_raw$RADR, bi14_raw$RLOG, sep = "-")
-bi19_raw$IDLOG <- paste(bi19_raw$NC, bi19_raw$DIST, bi19_raw$RADR, bi19_raw$RLOG, sep = "-")
+- `NC` : numéro de la commune (de 01 à 33),
+- `DIST` : code ilot / district. C'est l'unité géographique de référence de l'ISEE. On utilisera plutôt la commune et un IRIS intermédiaire entre commune et îlot créé pour le projet, appelé `IRIS` ou `IRISUNC`
+- `RADR` : rang de la construction, rang de l'adresse. 
+- `RLOG` : rang de logement.
 
-# table à deux variables IDLOG et NB_MAJ (nb nombre adultes majeurs) calculées sur la BI
-bi09_log <- bi09_raw[bi09_raw$AGER >= 18, ] %>%
-  group_by(IDLOG) %>%
-  summarise(NB_MAJ = n())
-bi14_log <- bi14_raw[bi14_raw$AGER >= 18, ] %>%
-  group_by(IDLOG) %>%
-  summarise(NB_MAJ = n())
-bi19_log <- bi19_raw[bi19_raw$AGER >= 18, ] %>%
-  group_by(IDLOG) %>%
-  summarise(NB_MAJ = n())
-```
+Si les questionnaires des RP 2009, 2014 et 2019 sont très similaires, certaines modalités changent néanmoins, dont notamment dans la BL 2019:
 
-On affiche le nombre de ligne de chaque fichier, et ainsi le nomrbe d'individus total en NC :
+- la variable `BATI` en 2019, les anciennes modalités 2009 et 2009 sont disponibles dans la variable `TYPC14`.
+- la variable `DIPLM` en 2019, les anciennes modalités 2009 et 2009 sont disponibles dans la variable `DIPLM14`.
 
-```{r}
-for (base in list(bi09_raw, bi14_raw, bi19_raw)) {
-  print(nrow(base))
-}
-```
+On note qu'à ce stade, on ne se sert pas encore des BI.
 
-On charge maintenant les BL des trois années.
-On crée la clef de jointure comme pour la BI.
-Si les RP 2009 et 2014 sont très similaires, certaines modalités des variables changent avec les RP. Notamment, la variable `BATI` en 2019.
+```{r load-bl, cache=TRUE}
+bl09_r <- read_csv2("./src-rp/BL2009.csv") %>%
+  filter(CATL == 1) %>%
+  mutate(
+    # on crée la clef de jointure entre BL et BI
+    IDLOG = paste(NC, DIST, RADR, RLOG, sep = "-")
+  )
 
-```{r, results='hide', message=F, warning=F, cache=TRUE}
-bl09_raw <- read_csv2("./src-rp/BL2009.csv") %>% filter(CATL == 1)
-bl14_raw <- read_csv2("./src-rp/BL2014.csv") %>% filter(CATL == 1)
-bl19_raw <- read_csv2("./src-rp/BL2019.csv") %>% filter(CATL == 1)
-# un erreur corrigée manuellement
+bl14_r <- read_csv2("./src-rp/BL2014.csv") %>%
+  filter(CATL == 1) %>%
+  mutate(
+    # on crée la clef de jointure entre BL et BI
+    IDLOG = paste(NC, DIST, RADR, RLOG, sep = "-")
+  )
+
+bl19_r <- read_csv2("./src-rp/BL2019.csv") %>%
+  filter(CATL == 1) %>%
+  mutate(
+    # on transforme les modalités BATI et DIPLM de 2019 pour reprendre celles de 2009/2014
+    # afin que les années soient comparables
+    BATI = TYPC14,
+    DIPLM = DIPLM14,
+    # on crée la clef de jointure entre BL et BI
+    IDLOG = paste(NC, DIST, RADR, RLOG, sep = "-")
+  )
+
+# un erreur corrigée manuellement dans le CSV
+# ligne 54501, colonne 71 (année), la valeur 198? a été remplacée par 1985.
 # 1 54501    71 a double 198?
-
-# ici, on va transformer la modalité BATI de la BL09 et BL14 dans la BL19
-# en fait, c'est la variable TYPC14 du BL 09
-# idem pour le diplôme qui est DIPLM mais dont le codage change en 2019
-bl19_raw$BATI <- bl19_raw$TYPC14
-bl19_raw$DIPLM <- bl19_raw$DIPLM14
-
-bl09_raw$IDLOG <- paste(bl09_raw$NC, bl09_raw$DIST, bl09_raw$RADR, bl09_raw$RLOG, sep = "-")
-bl14_raw$IDLOG <- paste(bl14_raw$NC, bl14_raw$DIST, bl14_raw$RADR, bl14_raw$RLOG, sep = "-")
-bl19_raw$IDLOG <- paste(bl19_raw$NC, bl19_raw$DIST, bl19_raw$RADR, bl19_raw$RLOG, sep = "-")
-
-bl09_r <- merge(bi09_log, bl09_raw, by = "IDLOG")
-bl14_r <- merge(bi14_log, bl14_raw, by = "IDLOG")
-bl19_r <- merge(bi19_log, bl19_raw, by = "IDLOG")
 ```
 
-Une erreur d'import corrigée manuellement sur la BL 2014, ligne 54501, dans la colonne 71 (année), `198?` a été remplacé par `1985`.
-On peut ne garde que les ménages qui sont des résidences principales en filtrant la BL `(CATL == 1)`, mais comme on fait la jointure sur `IDLOG`, l'effet est similaire.
-Les comptes exacts ne sont pas tout à fait identiques, par exemple sur le RP 2019 :
-
-- `r (nrow(bl19_raw))` logements dans la BL
-- `r (sum(bl19_raw$CATL == 1))` logements principaux dans la BL
-- `r (nrow(bi19_log))` logements dans la BI
-
-In fine, après jointure, les BL contiennent :
+In fine, les BL contiennent :
 
 -  `r (nrow(bl09_r))` logements d'intérêt en 2009
 -  `r (nrow(bl14_r))` logements d'intérêt en 2014
 -  `r (nrow(bl19_r))` logements d'intérêt en 2019
 
-```{r}
+```{r load-bl-sizes, include=FALSE}
 for (base in list(bl09_r, bl14_r, bl19_r)) {
   print(paste(nrow(base), "logements"))
 }
 ```
 
+On charge le dictionnaire des communes et des IRIS pour avoir leurs noms correctement orthographiés.
+
+```{r load-communes, cache=TRUE}
+communes <- read_csv2("src-communes/communes.csv") %>% column_to_rownames("CODE_COM")
+iris_csv <- read_csv2("src-iris/iris.csv") %>% select(IRIS, LIB_IRIS)
+```
+
 
 ## Calcul de l'indicateur de niveau d'équipement des ménages (NEM)
 
-On reprend le traitement des variables catégorielles d'équipement de ménage d'Elise/Alban/Heloise utilisés précédement pour les RP 2009 et 2014.
-On doit l'adapter, car certaines variables ne sont présentes dans la BL 2019 (`TMOB`, `ORDI`). Certaines modalités comme `ELEC` on changé en 2019. `MAL` a été ajoutée.
-Le codage des variables `VOIT`, `BATO`, `DEROU` a été modifié (binarisé, pour le rendre homogène avec les autres).
-Plus généralement, _on s'intérroge sur l'influence de l'arbitraire du codage sur les résultats d'analyses_.
+On reprend la méthodologie générale des études socio-énonomiques précédemment réalisées dans le volet A du projet M1T dans les stages d'Elise, Alban et Heloise qui s'appuyaient sur un indicateur de _niveau d'équipement des ménages_ construit à partir des variables disponibles dans la BL.
 
 ### Codage des modalités
 
-Le codage est encapsulé dans la fonction `codage_modalites_bl` qui va renvoyer une copie transformée de la `base` passée en paramètre.
-Cette fonction transforme les variables catégorielles d'équipement en variables binaires.
-Au total, le NEM utilise 14 variables binaires : `"ELEC", "EAU", "BATI", "BAIN", "WC", "MAL", "REFRI", "CLIM", "CHOS", "TFIXE", "INTER", "VOIT", "BATO", "DEROU"`.
+La première étape est le traitement des variables catégorielles d'équipement des ménages.
+On doit adapter le codage utilisés précédement pour les RP 2009 et 2014 :
 
-```{r, results='hide', message=F, warning=F}
-codage_modalites_bl <- function(base) {
-  # ELEC – Mode principal d’éclairage
-  # RP09/14 : 1 = réseau général, 3 = panneaux
-  # RP19 : 1 = raccordé, 2 = non
-  base$ELEC <- as.numeric(base$ELEC == 1)
+- les variables `TMOB`, `ORDI` ne sont plus présentes dans la BL 2019.
+- certaines modalités comme `ELEC` on changé en 2019.
+- la variable `MAL` présente sur les 3 RP a été ajoutée.
+- le codage des variables `VOIT`, `BATO`, `DEROU` a été modifié
+  - il a été binarisé, pour le rendre homogène avec les autres, alors qu'il était précédement codé sur 4 valeurs,
+  - on s'appuie sur le nombre d'actifs du logement (`INPAM`) et plus le nombre de personnes majeurs, ce qui évite une jointure avec la BI, 
 
-  # EAU – Alimentation principale en eau du logement
-  # RP09/14/19 : 1 = eau courante
-  base$EAU <- as.numeric(base$EAU == 1)
+Il y a un questionnement général sur **l'influence du codage sur les résultats d'analyses** et la validité des conclusions _si on adopte un codage similaire mais différent_.
 
-  # BATI – Type de logement
-  # RP09/14 : 1 = maison, 2 = appartement, 3 = case, 4 = provisoire
-  # RP19 : 1 = case, 2 = tôle, 3 = maison bois/clin/chaux, 4 = maison ou immeuble en dur
-  # préalablement intégré sur RP19
-  base$BATI <- as.numeric(base$BATI %in% c(1,2))
+Le codage est encapsulé dans la fonction `codage_modalites_bl` qui va créer un nouveau _dataframe_
+Cette fonction transforme 14 variables catégorielles d'équipement en variables binaires.
+Sauf précision, il n'y a que deux modalités _1 : équipé_ et  _2 : non équipé_ pour les 14 variables suivantes qui sont agrégés dans le NEM :
 
-  # BAIN – Baignoire ou douche (IS dans données Rivoilant)
-  # RP09/14/19 : 1 = bain ou douche
-  base$BAIN <- as.numeric(base$BAIN == 1)
+- `ELEC`: mode principal d'éclairage. (RP09/14 : 1 = réseau général, 3 = panneaux. RP19 : 1 = raccordé, 2 = non). Par cohérence entre années, on ne garde que la modalité 1;
+- `EAU` : alimentation principale en eau du logement. (RP09/14/19 : 1 = eau courante);
+- `BATI` : type de logement, 1 ssi le type est _maison_ (1) ou _appartement_ (2), les autres valeurs valant 0;
+- `BAIN` : baignoire ou douche (variables `IS` dans les données 2009 et 2014 de P. Rivoilant);
+- `WC` : équipement en WC;
+- `MAL` :  machine à laver;
+- `REFRI` : réfrigérateur;
+- `CLIM` :  équipement du logement en climatisation;
+- `CHOS` : équipement du logement en chauffe-eau solaire;
+- `TFIXE` : téléphone fixe;
+- `INTER` : accès internet;
+- `VOIT` : nombre de voitures, 1 ssi le nombre de véhicules est supérieur ou égal au nombre d'actifs;
+- `BATO` : nombre de bateaux, 1 ssi le nombre de véhicules est supérieur ou égal au nombre d'actifs;
+- `DEROU` : nombre de deux-roues motorisés, 1 ssi le nombre de véhicules est supérieur ou égal au nombre d'actifs.
 
-  # WC – WC
-  # RP09/14/19 : 1 = équipé
-  base$WC <- as.numeric(base$WC == 1)
 
-  # MAL – Machine à laver
-  # RP09/14/19 : 1 = équipé
-  base$MAL <- as.numeric(base$MAL == 1)
-
-  # REFRI – Réfrigérateur
-  # RP09/14/19 : 1 = équipé
-  base$REFRI <- as.numeric(base$REFRI == 1)
-
-  # CLIM – Equipement du logement en climatisation
-  # RP09/14/19 : 1 = équipé
-  base$CLIM <- as.numeric(base$CLIM == 1)
-
-  # CHOS – Equipement du logement en chauffe-eau solaire
-  # RP09/14/19 : 1 = équipé
-  base$CHOS <- as.numeric(base$CHOS == 1)
-
-  # TFIXE – Téléphone fixe
-  # RP09/14/19 : 1 = équipé
-  base$TFIXE <- as.numeric(base$TFIXE == 1)
-
-  # INTER – Accès internet
-  # RP09/14/19 : 1 = équipé
-  base$INTER <- as.numeric(base$INTER == 1)
-
-  # Ici, on va avoir trois facon de calculer selon que l'on dispose de la BI ou pas et sur
-  # le choix des coefficients (binaire ou 0/1/2/3)
-  # NB_MJ - Le nombre d'individus majeurs, calculé et  join depuis la BI
-  # INPAM – Nombre d’actifs
-
-  # VOIT – Nombre de voiture,
-  # base$VOIT <- as.numeric(base$INPAM < base$VOIT)
-  base$VOIT <- as.numeric(base$NB_MAJ < base$VOIT)
-
-  # BATO – Nombre de bateaux
-  # base$BATO <- as.numeric(base$INPAM < base$BATO)
-  base$BATO <- as.numeric(base$NB_MAJ < base$BATO)
-
-  # DEROU - Deux-roues
-  # base$DEROU <- as.numeric(base$INPAM < base$DEROU)
-  base$DEROU <- as.numeric(base$NB_MAJ < base$DEROU)
-
+```{r codage-modalite-bl-funct}
+codage_modalites_bl <- function(src) {
+  # on garde les variables suppl d'intérêt
+  base <- src %>%
+    select(IDLOG, IRISUNC, NC, PROV, CS8M, DIPLM, AGERM)
+  # on construit les 14 variables binaires
+  base$ELEC <- as.numeric(src$ELEC == 1)
+  base$EAU <- as.numeric(src$EAU == 1)
+  base$BATI <- as.numeric(src$BATI %in% c(1, 2))
+  base$BAIN <- as.numeric(src$BAIN == 1)
+  base$WC <- as.numeric(src$WC == 1)
+  base$MAL <- as.numeric(src$MAL == 1)
+  base$REFRI <- as.numeric(src$REFRI == 1)
+  base$CLIM <- as.numeric(src$CLIM == 1)
+  base$CHOS <- as.numeric(src$CHOS == 1)
+  base$TFIXE <- as.numeric(src$TFIXE == 1)
+  base$INTER <- as.numeric(src$INTER == 1)
+  base$VOIT <- as.numeric(src$INPAM <= src$VOIT)
+  base$BATO <- as.numeric(src$INPAM <= src$BATO)
+  base$DEROU <- as.numeric(src$INPAM <= src$DEROU)
   return(base)
 }
 ```
@@ -205,67 +199,66 @@ On applique cette transformation et on ne garde que le sous-ensemble des 14 vari
 - le code d'IRIS (variable `IRISUNC`),
 - le numéro de commune (variable `NC`)
 - la province (variable `PROV`)
-- la CSP sur 8 postes du référent de ménage (variable `CS8M`)
-- le diplôme de la personne de référence (variable `DIPLM`)
-- l'age révolu du référent de ménage (variable `AGERM`)
-- le type de ménage regroupé (`TYPMENR`)
+- la CSP sur 8 postes de la personne de référence du ménage (variable `CS8M`)
+- le diplôme de la personne de référence du ménage (variable `DIPLM`)
+- l'age révolu de la personne de référence du ménage (variable `AGERM`)
+- on garde aussi `IDLOG` pour la jointure avec la BI.
 
-```{r, results='hide', message=F, warning=F}
-bl09 <- codage_modalites_bl(bl09_r) %>% select(IRISUNC, NC, PROV, CS8M, DIPLM, AGERM, TYPMENR, ELEC, EAU, BATI, BAIN, WC, MAL, REFRI, CLIM, CHOS, TFIXE, INTER, VOIT, BATO, DEROU)
-bl14 <- codage_modalites_bl(bl14_r) %>% select(IRISUNC, NC, PROV, CS8M, DIPLM, AGERM, TYPMENR, ELEC, EAU, BATI, BAIN, WC, MAL, REFRI, CLIM, CHOS, TFIXE, INTER, VOIT, BATO, DEROU)
-bl19 <- codage_modalites_bl(bl19_r) %>% select(IRISUNC, NC, PROV, CS8M, DIPLM, AGERM, TYPMENR, ELEC, EAU, BATI, BAIN, WC, MAL, REFRI, CLIM, CHOS, TFIXE, INTER, VOIT, BATO, DEROU)
+
+```{r codage-modalite-bl, cache=TRUE}
+bl09 <- codage_modalites_bl(bl09_r)
+bl14 <- codage_modalites_bl(bl14_r)
+bl19 <- codage_modalites_bl(bl19_r)
 ```
 
 ### Calcul des poids du NEM
 
-On va maintenant calculer le NEM avec le poids de chacune des variables d'équipement sur les 5 premières dimensions d'une ACP.
+On va maintenant calculer le NEM avec le poids de chacune des variables d'équipement grâce aux 5 premières dimensions d'une ACP.
 Ce calcul est refait pour chacun des RP 2009, 2014 et 2019.
-On donne les poids des 14 variables pour chaque année.
 Pour le chargement dans QGIS, on crée _manuellement_ un fichier `.csvt` éponyme qui contient les types des colonnes.
 
-```{r results='hide', message=F, warning=F}
+```{r compute-nem-weights}
 # nombre de dimensions de la projection qu'on garde pour le calcul des poids
 n_dim <- 5
 get_weights <- function(base) {
-  res <- PCA(select(base, -IRISUNC, -NC, -PROV, -CS8M, -DIPLM, -AGERM, -TYPMENR), scale.unit = TRUE, graph = FALSE, ncp = n_dim)
+  res <- base %>%
+    select(-IRISUNC, -NC, -PROV, -CS8M, -DIPLM, -AGERM, -IDLOG) %>%
+    PCA(scale.unit = TRUE, graph = FALSE, ncp = n_dim)
   var_n_dim <- sum(res$eig[1:n_dim, 2])
   weights <- res$var$contrib[, 1:n_dim] %*% res$eig[1:n_dim, 2] / var_n_dim
   return(weights)
 }
 
-weights <- sapply(list(bl09, bl14, bl19), get_weights)
+weights <- list(bl09, bl14, bl19) %>%
+  sapply(get_weights) %>%
+  data.frame()
 colnames(weights) <- c("Y2009", "Y2014", "Y2019")
 row.names(weights) <- c("ELEC", "EAU", "BATI", "BAIN", "WC", "MAL", "REFRI", "CLIM", "CHOS", "TFIXE", "INTER", "VOIT", "BATO", "DEROU")
 write.csv2(weights, "output/nem_weights.csv", na = "", fileEncoding = "UTF-8", row.names = TRUE)
 ```
 
 On a des _variation substantielles_ des coefficients selon le codage choisi avec ka fonction `codage_modalites_bl`.
-On affiche le résultat enregistré dans le fichier  `output/nem_weights.csv`.
+On affiche ci-dessous le résultat enregistré dans le fichier  `output/nem_weights.csv`.
 
-
-```{r}
+```{r compute-nem-weights-show}
 weights
 ```
 
-On conforte certaine intuitions via l'évolutions des poids calculés via la PCA:
+On conforte certaine intuitions via l'évolutions des poids calculés via la PCA, comme l'influence du raccordement à l'eau qui diminue dans le temps et est une des plus faible.
+Maintenant on enrichit les _dataframes_ `bl09`, `bl14` et `bl19` avec les valeurs du NEM (variable `NEM`) et les valeurs en base 100 (variable `NEM100`) sur _toute la Nouvelle-Calédonie_.
 
-- l'influence du raccordement à l'eau diminue et est une des plsu faible,
-- le type de batiment, la machine à laver ne sont pas très discrimant.
-
-Maintenant on enrichit les _dataframes_ avec les valeurs du NEM (variable `NEM`) et les valeurs en base 100 (variable `NEM100`) sur toute la Nouvelle-Calédonie.
-
-```{r, results='hide', message=F, warning=F}
-bl09$NEM <- rowSums(select(bl09, -IRISUNC, -NC, -PROV, -CS8M, -DIPLM, -AGERM, -TYPMENR) * weights[, "Y2009"])
+```{r compute-nem-weights-base-100}
+bl09$NEM <- rowSums(select(bl09, -IDLOG, -IRISUNC, -NC, -PROV, -CS8M, -DIPLM, -AGERM) * weights[, "Y2009"])
 bl09$NEM100 <- (100 * bl09$NEM) / mean(bl09$NEM)
 
-bl14$NEM <- rowSums(select(bl14, -IRISUNC, -NC, -PROV, -CS8M, -DIPLM, -AGERM, -TYPMENR) * weights[, "Y2014"])
+bl14$NEM <- rowSums(select(bl14, -IDLOG, -IRISUNC, -NC, -PROV, -CS8M, -DIPLM, -AGERM) * weights[, "Y2014"])
 bl14$NEM100 <- (100 * bl14$NEM) / mean(bl14$NEM)
 
-bl19$NEM <- rowSums(select(bl19, -IRISUNC, -NC, -PROV, -CS8M, -DIPLM, -AGERM, -TYPMENR) * weights[, "Y2014"])
+bl19$NEM <- rowSums(select(bl19, -IDLOG, -IRISUNC, -NC, -PROV, -CS8M, -DIPLM, -AGERM) * weights[, "Y2014"])
 bl19$NEM100 <- (100 * bl19$NEM) / mean(bl19$NEM)
 ```
 
-### Agrégation des logements par IRIS
+### Agrégation du NEM par IRIS
 
 On crée un _dataframe_ avec les valeurs agrégées du NEM par IRIS, on donne ici 7 indicateurs :
 
@@ -273,7 +266,7 @@ On crée un _dataframe_ avec les valeurs agrégées du NEM par IRIS, on donne ic
 - somme, moyenne et écart type pour le NEM
 - somme, moyenne et écart type pour le NEM base 100 NC
 
-```{r, results='hide', message=F, warning=F}
+```{r compute-nem-by-iris}
 group_by_iris <- function(base) {
   iris <- base %>%
     group_by(IRISUNC) %>%
@@ -293,10 +286,10 @@ iris14 <- group_by_iris(bl14)
 iris19 <- group_by_iris(bl19)
 ```
 
-On fait la jointure en post-fixant les années et on exporte le tout dans un fichier `.csv` avec son compagnon `.csvt`.
-On obtient un résultat comme suit enregistré dans le fichier `output/nem_iris.csv` qui constitue le matériel de base pour la suite de l'étude.
+On fait la jointure en post-fixant les années et on exporte le tout dans le fichier `output/nem_iris.cs` avec son compagnon `.csvt` qui contient les types (pour QGIS).
+On obtient un fichier résultat comme suit qui constitue le matériel de base pour la suite de l'étude.
 
-```{r}
+```{r join-nem-by-iris}
 
 nem_iris <- (iris09 %>%
   full_join(iris14, by = "IRISUNC", suffix = c("_09", ""))) %>%
@@ -307,364 +300,653 @@ nem_iris
 ```
 
 
-## Analyses de l'équipement des ménages
+## Contributions des variables du NEM
 
-On charge le dictionnaire des communes pour avoir leurs noms.
+Dans cette section, on va vérifier la validité de l'indicateur NEM en le comparant aux co-facteurs socio-énconomiques des individus (soit les personnes de référence des ménage, soient les individus de la BI).
 
-```{r, message=F, warning=F, cache=TRUE}
-communes <- read_csv2("./src-communes/communes.csv") %>% column_to_rownames("CODE_COM")
-# communes
-```
+### ACP de l'équipement des ménages par commune
 
+On fait une analyse PCA directement sur les 14 variables d'équipement qui constituent le NEM sur la BL 2019, qu'on agrège par commune pour que le graphe soit plus lisible.
 
-### Contributions des variables du NEM, analyse sur BL 2019
-
-On va faire une analyse PCA directe, sans passer par le calcul du NEM. Ici on agrège par commune pour que le graphe soit plus lisible.
-On confirme ainsi la position de Nouéma, suivie du groupe de sa conurbation (Mont-Dore, Dumbéa, Païta) suivi de Pouembout dans à droite du premier axe et généralement des communes de l'ouest à droite de l'axe des ordonnées.
-
-
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-df <- bl19 %>%
-  select(-IRISUNC, -PROV, -CS8M, -DIPLM, -AGERM, -TYPMENR) %>%
+```{r bl-communes-variables}
+df_communes <- bl19 %>%
+  select(-IDLOG, -IRISUNC, -PROV, -CS8M, -DIPLM, -AGERM) %>%
   group_by(NC) %>%
   summarise(
     across(everything(), mean),
     COUNT = n(),
   ) %>%
-  column_to_rownames("NC")
+  merge(communes, by.x = "NC", by.y = 0) %>%
+  column_to_rownames("NOM_COMMUNE") %>%
+  select(-NC, -TYPE)
 
-df <- df[order(rownames(df)), ]
-rownames(df) <- communes$NOM_COMMUNE
-pca_communes <- PCA(df %>% select(-NEM, -NEM100, -COUNT), graph = FALSE)
-write.csv2(df, "output/nem_communes.csv", na = "", fileEncoding = "UTF-8", row.names = TRUE)
+write.csv2(df_communes, "output/nem_communes.csv", na = "", fileEncoding = "UTF-8", row.names = TRUE)
+df_communes
+```
+
+On remarque la position du Grand Nouméa et de Pouembout à droite du premier axe et accompagnés des des communes de la côte ouest de la NC, avec les communes de la province des îles, de la côte est et du Nord au contraire à gauche.
+Ces deux premières dimensions capturent respectivement 63.5% et 11.8% de la variance.
+Pour le NEM on utilise les 5 premières dimensions qui capturent au total 92.5% de la variance.
+
+```{r bl-communes-pca}
+pca_communes <- PCA(df_communes %>% select(-NEM, -NEM100, -COUNT), graph = FALSE)
 plot(pca_communes)
 ```
 
-```{r, warning=F}
+```{r bl-communes-pca-summary, warning=F}
 summary(pca_communes)
 ```
 
-Avec l'analyse des correspondances, on distingue _sur les 2 axes principaux_ les groupes de variables suivants :
+### AFC de l'équipement des ménages par commune
 
-- `CLIM`, `TFIXE`, `INTER` et `CHOS` qui donnent du poids au premier axe, avec au plus proche du Grand Nouéma et de Pouembout,
-- un groupe `REFRI`, `ELEC`, `BAIN`, `WC`, `EAU` et `BATI` proches du profil moyen, `MAL` s'échappant un peu,
-- le transport avec `VOIT`, `DEROU` et `BATO` qui contribuent largement au 2ème axe avec en plus `BATO` marqueur du 1er axe.
+Avec _l'Analyse Factorielle des Correspondances_ (AFC) on va pouvoir representer graphiquement les communes et les 14 variables dans un même espace.
+On distingue _sur les 2 axes principaux_ les groupes de variables suivants, qui sont aussi visibles sur le cercle des correspondances de l'ACP (non représenté) :
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-ca_commune <- CA(df %>% select (-NEM, -NEM100, -COUNT), graph = FALSE)
+- `CLIM`, `TFIXE`, `INTER` et `CHOS` qui donnent du poids au premier axe, proches du Grand Nouméa et de Pouembout,
+- un groupe `REFRI`, `ELEC`, `BAIN`, `WC`, `EAU` et `BATI` proches du profil moyen, `MAL` s'échappant un peu,  `VOIT` est peu discriminant et proche de ce groupe,
+- le transport avec `DEROU` et `BATO` qui contribuent largement au 2ème axe. 
+
+```{r bl-communes-ca}
+ca_commune <- CA(df_communes %>% select(-NEM, -NEM100, -COUNT), graph = FALSE)
 plot(ca_commune)
 ```
 
-```{r, warning=F}
+```{r bl-communes-ca-summary}
 summary(ca_commune)
 ```
 
-On va faire une analyse CA mais cette fois ci sur les catégorie socio professionnelle (8 postes) du référent de logement.
-On retrouve le groupe  `CLIM`, `TFIXE`, `CHOS` et `INTER` à proximité des CSP+, PI et artisans, avec `DEROU` comme marqueur très fort.
-On retrouve le groupe `REFRI`, `ELEC`, `BAIN`, `MAL`, `WC` et `EAU` vers le profil moyen.
+
+### AFC de l'équipement des ménages par CSP de l'ensemble des individus actifs
 
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-df <- bl19 %>%
-  select(-IRISUNC, -NC,  -PROV, -NEM, -NEM100, -DIPLM, -AGERM, -TYPMENR) %>%
-  group_by(CS8M) %>%
+On utilise la même méthode AFC mais cette fois entre équipement et catégories socio professionnelle (8 postes) de _l'ensemble des individus actifs de la BI_ (pas seulement les référents de ménages).
+Pour cela, on joint sur la BI 2019 pour porter, les informations de logements seront _dupliquées_ pour tous ses occupants actifs.
+On définit ici _actif_ comme un individu avec une CSP autre que _retraités_ (7) et _autres personnes sans activité professionnelle_ (8).
+On commence par charge la BI 2019.
+
+```{r bi-load-join, cache=TRUE}
+# on va regrouper les communautés en 5 classes, correspondant à celles
+# figurant au titre iv) de l'article 1 de l'arêté du 10/09/21 relatif à la diffusion du RP 2019
+
+map_reth <- function(val) {
+  case_when(
+    val == "1" ~ "Kanake",
+    val == "2" | val == "C" ~ "Européenne/Calédonienne",
+    val == "7" ~ "Wallisienne/Futunienne",
+    val == "M" ~ "Métis",
+    TRUE ~ "Autre"
+  )
+}
+
+bi19_r <- read_csv2("./src-rp/BI2019.csv") %>%
+  filter(CS8 <= 6) %>%
+  mutate(
+    IDLOG = paste(NC, DIST, RADR, RLOG, sep = "-"),
+    ETH = map_reth(RETH)
+  )
+
+# on oublie les erreurs et on joint
+bl19_bi19 <- merge(bl19, bi19_r, by = "IDLOG", suffixes = c("_BL", "_BI"))
+```
+
+On a gardé ainsi `r (nrow(bi19_r))` individus de la BI 2019, on transforme les données et on caclule l'AFC.
+
+```{r bi-cs8-ca}
+cs8m_labels <- c(
+  "Agriculteurs exploitants",
+  "Artisans, commerçants et chefs d'ent.",
+  "Cadres et professions int. sup.",
+  "Professions intermédiaires",
+  "Employés",
+  "Ouvriers",
+  "Retraités",
+  "Autres pers. sans activité pro."
+)
+
+# CS8 est la variable CSP dans la BI, CS8M celle dans la BL
+df_cs8m_bi <- bl19_bi19 %>%
+  select(CS8, ELEC, EAU, BATI, BAIN, WC, MAL, REFRI, CLIM, CHOS, TFIXE, INTER, VOIT, BATO, DEROU) %>%
+  group_by(CS8) %>%
   summarise_all(
     mean
   ) %>%
-  column_to_rownames("CS8M")
+  mutate(
+    CS8 = factor(cs8m_labels[1:6])
+  ) %>%
+  column_to_rownames("CS8")
 
-df <- df[order(rownames(df)), ]
-cs8m_label <- c("Agriculteurs exploitants", "Artisans, commerçants et chefs d'entreprise", "Cadres et professions intellectuelles supérieures", "Professions intermédiaires", "Employés", "Ouvriers", "Retraités", "Autres personnes sans activité professionnelle")
-rownames(df) <- cs8m_label
-ca_csm <- CA(df, graph = FALSE)
-plot(ca_csm)
+ca_csm_bi <- CA(df_cs8m_bi, graph = FALSE)
+plot(ca_csm_bi)
 ```
 
-Cette fois-ci par catégorie de diplômes, avec une allure assez semblable au final.
-On remarque la qualité de du premier axe qui positionne **dans l'ordre** le niveau de diplôme croissant de gauche à droite.
+On retrouve sensiblement les mêmes groupements de variables d'équipement sur un premier axe avec 93.4% de variance et un second marqué par la mobilité avec 5.9% d'inertie.
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-df <- bl19 %>%
-  select(-IRISUNC, -NC,  -PROV, -NEM, -NEM100, -CS8M, -AGERM, -TYPMENR) %>%
-  group_by(DIPLM) %>%
+- le groupe  `CLIM`, `TFIXE`, `CHOS`, `INTER` et `VOIT` est à proximité des CSP+, PI et artisans, qui tous les deux marquent le premier axe factoriel,
+- le groupe `REFRI`, `ELEC`, `BAIN`, `MAL`, `WC` et `EAU` est proche du vers le profil moyen,
+- `DEROU` et `BATO` sont des marqueurs très fort des deux axes.
+
+
+```{r bi-cs8}
+df_cs8m_bi
+```
+
+### AFC de l'équipement des ménages par niveau de diplôme de l'ensemble des individus actifs
+
+Cette fois-ci on fait l'analyse par catégorie de diplômes des individus de la BI, avec une allure assez semblable au final constitué des mêmes groupes de variables.
+
+
+```{r bi-diplm-ca}
+diplm_labels <- c("Aucun", "CEP", "BEPC", "CAP/BEP", "Bac général", "Bac tech./pro.", "Bac+2/+3", "Bac+5/+8")
+
+# DIPLR est la variable de diplôme dans la BI, DIPLM celle dans la BL
+df_diplm_bi <- bl19_bi19 %>%
+  select(DIPLR, ELEC, EAU, BATI, BAIN, WC, MAL, REFRI, CLIM, CHOS, TFIXE, INTER, VOIT, BATO, DEROU) %>%
+  group_by(DIPLR) %>%
   summarise_all(
     mean
   ) %>%
-  column_to_rownames("DIPLM")
+  mutate(
+    DIPLR = factor(diplm_labels)
+  ) %>%
+  column_to_rownames("DIPLR")
 
-df <- df[order(rownames(df)), ]
-diplm_label <- c("Aucun", "CEP", "BEPC", "CAP/ BEP", "Bac général", "Bac techno./pro.", "Bac+2/Bac+3", "Bac+5/Bac+8")
-rownames(df) <- diplm_label
-ca_csm <- CA(df, graph = FALSE)
-plot(ca_csm)
+ca_diplm_bi <- CA(df_diplm_bi, graph = FALSE)
+plot(ca_diplm_bi)
 ```
 
-Sur le type de ménage, on observe des profils assez différents, avec un second axe très marqué sur la mobilité. _NDA : je ne sais absolument pas quoi en faire_.
+On voit que la représentation est encore très franche, avec
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-df <- bl19 %>%
-  select(-IRISUNC, -NC,  -PROV, -NEM, -NEM100, -CS8M, -AGERM, -DIPLM) %>%
-  group_by(TYPMENR) %>%
+- une premier axe qui capture 97.4% de la variance,
+- les diplômes **sont parfaitement ordonnés selon la durée des études**  sur le premier axe :
+  - Aucun diplôme et CEP;
+  - BEPC et CAP/BEP;
+  - Bacs technologiques ou professionnel et généraux;
+  - Bac+2/+3 et Bac+5/+8
+- on retrouve les groupements similaires d'équipements,
+- et également un poids important de la mobilité, sauf voiture.
+
+```{r bi-diplm}
+df_diplm_bi
+```
+
+### AFC de l'équipement des ménages par ethnie de l'ensemble des individus actifs
+
+Cette fois enfin on fait l'analyse par groupe ethnique des individus de la BI et on s'abstiendra de toute autre commentaire.
+
+```{r bi-eth-ca}
+# DIPLR est la variable de diplôme dans la BI, DIPLM celle dans la BL
+df_eth_bi <- bl19_bi19 %>%
+  select(ETH, ELEC, EAU, BATI, BAIN, WC, MAL, REFRI, CLIM, CHOS, TFIXE, INTER, VOIT, BATO, DEROU) %>%
+  group_by(ETH) %>%
   summarise_all(
     mean
   ) %>%
-  column_to_rownames("TYPMENR")
+  column_to_rownames("ETH")
 
-df <- df[order(rownames(df)), ]
-typmenr_label <- c("Personne seule", "Couple sans enfant", "Couple avec enfant(s)", "Famille monoparentale", "Ménage complexe")
-rownames(df) <- typmenr_label
-ca_csm <- CA(df, graph = FALSE)
-plot(ca_csm)
+df_eth_bi <- CA(df_eth_bi, graph = FALSE)
+plot(df_eth_bi)
 ```
 
-On va maintenant représenter les variations du NEM100 par province sur chacune des années de recensement avec une représentation _violin plot_ qui permet de comparer les distributions des valeurs entre classes.
-On va comparer les profils sur chacun des 3 RP.
+
+```{r bi-eth}
+df_eth_bi
+```
 
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-ggplot(bl09, aes(x = PROV, y = NEM100, fill = PROV)) +
-  ggtitle("Variations du NEM100 par province en 2009") +
+## Distribution et évolution du NEM
+
+### Par province
+
+On représente les variations du NEM100 par province sur chacune des années de recensement avec une représentation _violin plot_ qui permet de comparer les distributions des valeurs entre classes. On va comparer les profils sur chacun des 3 RP.
+On commence par fusionner tous les BL avec une nouvelle colonne d'années puis on trace un _violin plot_ pour chaque province et chaque année.
+
+```{r bl-prov-violin}
+bl_merged <- rbind(
+  bl09 %>% mutate(ANNEE = "2009"),
+  bl14 %>% mutate(ANNEE = "2014"),
+  bl19 %>% mutate(ANNEE = "2019")
+)
+
+ggplot(bl_merged, aes(x = PROV, y = NEM100, fill = ANNEE)) +
+  ggtitle("Variations du NEM100 par province en 2009, 2014 et 2019") +
   xlab("Province") +
-  theme(legend.position = "none") +
-  theme(axis.text.x = element_text(angle = 90)) +
-  geom_violin() +
-  stat_summary(fun = "mean", geom = "crossbar", width = 0.5, color = "grey", alpha = 0.8) +
-  stat_summary(fun = "median", geom = "point", color = "grey", alpha = 0.8)
+  scale_fill_brewer(palette = "Pastel2") +
+  geom_violin()
 ```
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-ggplot(bl14, aes(x = PROV, y = NEM100, fill = PROV)) +
-  ggtitle("Variations du NEM100 par province en 2014") +
-  xlab("Province") +
-  theme(legend.position = "none") +
-  theme(axis.text.x = element_text(angle = 90)) +
-  geom_violin() +
-  stat_summary(fun = "mean", geom = "crossbar", width = 0.5, color = "grey", alpha = 0.8) +
-  stat_summary(fun = "median", geom = "point", color = "grey", alpha = 0.8)
+On constate une tendance à **l'élévation du NEM dans la province nord et celle des îles** et à **la réduction de l'écart-type au sein de toutes les provinces**, correspondant à un ré-équilibrage des provinces et une réduction des inégalités.
+Ceci est vérifié par les valeurs numériques ci-après.
+On remarque en particulier _que l'élévation du NEM et la réduction de l'écart-type_ sont **très marqué entre 2009 et 2014** mais **moins entre 2014 et 2019**.
+On rappelle que la moyenne NC du NEM100 a été recentrée sur la valeur 100. L'écart-type général étant respectivement de 30.6, 24.2 et 23.5 en 2009, 2014 et 2019.
+
+
+```{r bl-prov-violin-numbers}
+bl_merged %>%
+  select(PROV, NEM100, ANNEE) %>%
+  group_by(PROV, ANNEE) %>%
+  summarise_all(list(mean = mean, sd = sd)) %>%
+  pivot_wider(names_from = ANNEE, values_from = c(mean, sd))
 ```
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-ggplot(bl19, aes(x = PROV, y = NEM100, fill = PROV)) +
-  ggtitle("Variations du NEM100 par province en 2019") +
-  xlab("Province") +
-  theme(legend.position = "none") +
-  theme(axis.text.x = element_text(angle = 90)) +
-  geom_violin() +
-  stat_summary(fun = "mean", geom = "crossbar", width = 0.5, color = "grey", alpha = 0.8) +
-  stat_summary(fun = "median", geom = "point", color = "grey", alpha = 0.8)
+### Par commune
+
+On va faire la même représentation cette fois-ci sur le sous-ensemble des neuf communes d'intérêt du projet, à savoir (variable `TYPE` de `src-communes/communes.csv`) :
+
+- les communes _métallurgiques_, à proximité des usines : Koné (11), Mont Dore (17), Pouembout (25), Poya (27), Voh (31)
+- les communes _minières_, à proximité des mines : Houailou (08), Yaté (32)
+- les communes _témoins_, à l'écart des exploitations minières : Hienghène (07) et Lifou (14)
+
+On commence par charger les trois BL que l'on joint avec les communes.
+
+```{r append-bl-communes}
+bl09_comm <- bl09 %>%
+  merge(communes, by.x = "NC", by.y = 0) %>%
+  filter(!is.na(TYPE)) %>%
+  select(NC, IRISUNC, NEM100, NOM_COMMUNE, TYPE)
+bl09_comm$ANNEE <- "2009"
+
+bl14_comm <- bl14 %>%
+  merge(communes, by.x = "NC", by.y = 0) %>%
+  filter(!is.na(TYPE)) %>%
+  select(NC, IRISUNC, NEM100, NOM_COMMUNE, TYPE)
+bl14_comm$ANNEE <- "2014"
+
+bl19_comm <- bl19 %>%
+  merge(communes, by.x = "NC", by.y = 0) %>%
+  filter(!is.na(TYPE)) %>%
+  select(NC, IRISUNC, NEM100, NOM_COMMUNE, TYPE)
+bl19_comm$ANNEE <- "2019"
+
+bl_comm <- rbind(bl09_comm, bl14_comm, bl19_comm)
 ```
 
-On va faire la même représentation cette fois-ci sur le sous-ensemble des communes d'intérêt du projet en 2019.
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-bl19_comm <- merge(bl19, communes, by.x = "NC", by.y = 0) %>% filter(!is.na(TYPE))
-ggplot(bl19_comm, aes(x = NOM_COMMUNE, y = NEM100, fill = TYPE)) +
+Ensuite, on représente l'évolution de la distribution des NEM100 en 2009, 2014 et 2019 avec la même représentation que pour les provinces.
+
+```{r bl-communes-violin}
+ggplot(bl_comm, aes(x = NOM_COMMUNE, y = NEM100, fill = ANNEE)) +
   ggtitle("Variations du NEM100 par commune") +
   xlab("Commune") +
-  theme(legend.position = "right") +
-  theme(axis.text.x = element_text(angle = 90)) +
-  geom_violin() +
-  stat_summary(fun = "mean", geom = "crossbar", width = 0.5, color = "grey", alpha = 0.8) +
-  stat_summary(fun = "median", geom = "point", color = "grey", alpha = 0.8)
-# geom_boxplot(alpha = 0.2, width = 0.5, color = "grey")
+  scale_fill_brewer(palette = "Pastel2") +
+  geom_violin()
 ```
 
-Enfin, on représente les IRIS de VKPP.
+L'allure générale est encore à la réduction des inégalités, mais au niveau des communes, on constate certains variations opposées, en particulier sur Yaté.
+La variation entre 2009 et 2019 est calculée en % pour la moyenne du NEM100 et en valeur absolue pour l'écart type.
+Les valeurs numériques sont données ci-après.
 
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-iris_csv <- read_csv2("src-iris/iris.csv") %>% select(IRIS, LIB_IRIS)
+```{r bl-comm-violin-numbers}
+bl_comm %>%
+  select(NOM_COMMUNE, NEM100, ANNEE) %>%
+  group_by(NOM_COMMUNE, ANNEE) %>%
+  summarise_all(list(mean = mean, sd = sd)) %>%
+  pivot_wider(names_from = ANNEE, values_from = c(mean, sd)) %>%
+  mutate(
+    diff_pc_mean_2019_2009 = 100 * (mean_2019 / mean_2009 - 1),
+    diff_abs_sd_2019_2009 = sd_2019 - sd_2009
+  )
+```
+
+
+### Infra communes sur VKPP en 2019
+
+Enfin, on représente la distribution du NEM100 sur les IRIS de VKPP.
+On constate une  **importante variation intra-communale** qui ne saurait être expliquée par la distance à la mine ou à l'usine, mais plutôt par leur homogénéité sociale.
+On ajoute sur cette représentation moyenne (trait) et mediane (point).
+
+```{r bl-vkpp-violin-2019}
+# Voh (31), Koné (11), Pouembout (25), Poya (27)
+vkpp_communes <- c("31", "11", "25", "27")
+
 bl19_iris_com <- bl19 %>%
   merge(y = communes, by.x = "NC", by.y = 0) %>%
-  filter(NC %in% c("31", "11", "25", "27")) %>%
-  merge(y=iris_csv, by.x = "IRISUNC", by.y = "IRIS")
+  filter(NC %in% vkpp_communes) %>%
+  merge(y = iris_csv, by.x = "IRISUNC", by.y = "IRIS")
 
 ggplot(bl19_iris_com, aes(x = paste(IRISUNC, LIB_IRIS), y = NEM100, fill = NOM_COMMUNE)) +
-  ggtitle("Variations du NEM100 par IRIS de VKPP") +
+  ggtitle("Variations du NEM100 par IRIS de VKPP en 2019 ") +
   xlab("IRIS VKPP") +
-  theme(legend.position = "right") +
-  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_brewer(palette = "Pastel2") +
   geom_violin() +
   stat_summary(fun = "mean", geom = "crossbar", width = 0.5, color = "grey", alpha = 0.8) +
   stat_summary(fun = "median", geom = "point", color = "grey", alpha = 0.8)
-# geom_boxplot(alpha = 0.2, width = 0.5, color = "grey")
 ```
 
-
-
-### Représentations spatiales du NEM
+## Représentations spatiales du NEM
 
 On charge le shapefile des IRIS pour pouvoir générer des cartes et on joint la définition géographique au NEM via les codes des IRIS.
 On étoffe le jeu de données avec quelques indicateurs synthétiques par IRIS :
 
-- `COUNT_DIFF_0919` :  pourcentage d'évolution 2009-2019 du nombre de logements,
-- `NEM100_MEAN_DIFF_0919` : pourcentage d'évolution 2009-2019 de la moyenne du NEM base 100,
-- `NEM100_SD_DIFF_0919` : évolution 2009-2019 de _l'écart-type_ du NEM base 100
+- `COUNT_DIFF_0919` :  pourcentage relatif d'évolution 2009-2019 du nombre de logements,
+- `NEM100_MEAN_PC_DIFF_0919` : pourcentage relatif d'évolution 2009-2019 de la moyenne du NEM base 100,
+- `NEM100_SD_ABS_DIFF_0919` : évolution en valeur absolue 2009-2019 de _l'écart-type_ du NEM base 100,
+- `NEM100_SD_ABS_DIFF_0914` : idem entre 2009 et 2014,
+- `NEM100_SD_ABS_DIFF_1419` : idem entre 2014 et 2019.
 
-On rappelle qu'on ne compte _que les résidences principales_.
+On rappelle qu'on ne compte _que les résidences principales_ de la BL.
 
-```{r, message=F, warning=F}
-# communes du Grand Nouméa :
+```{r nem-compute-iris}
+# communes du Grand Nouméa : NOUMEA (18), PAITA (21), MONT DORE (17), DUMBEA (05)
 grand_noumea <- c("05", "17", "18", "21")
-iris_shp <- st_read("src-iris/iris0914unc.shp")
-iris <- merge(x = iris_shp, y = nem_iris, by.x = "CODE_IRIS", by.y = "IRISUNC", all.x = TRUE)
-# iris$COMM <- as.numeric(iris$COMM)
-iris <- merge(x = iris, y = communes, by.x = "COMM", by.y = 0)
-
-# print(c(nrow(iris_shp), nrow(iris), nrow(nem_iris)))
-
-base_count_diff_0919 <- 100 * (nrow(bl19) / nrow(bl09) - 1)
-iris$COUNT_DIFF_0919 <- round(100 * ((iris$COUNT_19 / iris$COUNT_09) - 1), digits = 2)
-
-iris$NEM100_MEAN_DIFF_0919 <- round(100 * ((iris$NEM100_MEAN_19 / iris$NEM100_MEAN_09) - 1), digits = 2)
-iris$NEM100_SD_DIFF_0919 <- round(100 * ((iris$NEM100_SD_19 / iris$NEM100_SD_09) - 1), digits = 2)
-iris$NEM100_SD_DIFF_0914 <- round(100 * ((iris$NEM100_SD_14 / iris$NEM100_SD_09) - 1), digits = 2)
-iris$NEM100_SD_DIFF_1419 <- round(100 * ((iris$NEM100_SD_19 / iris$NEM100_SD_14) - 1), digits = 2)
+iris <- st_read("src-iris/iris0914unc.shp") %>%
+  select(COMM, CODE_IRIS, LIB_IRIS) %>%
+  merge(y = nem_iris, by.x = "CODE_IRIS", by.y = "IRISUNC", all.x = TRUE) %>%
+  merge(y = communes, by.x = "COMM", by.y = 0) %>%
+  mutate(
+    COUNT_DIFF_0919 = 100 * ((COUNT_19 / COUNT_09) - 1),
+    NEM100_MEAN_PC_DIFF_0919 = 100 * ((NEM100_MEAN_19 / NEM100_MEAN_09) - 1),
+    NEM100_SD_ABS_DIFF_0919 = NEM100_SD_19 - NEM100_SD_09,
+    NEM100_SD_ABS_DIFF_0914 = NEM100_SD_14 - NEM100_SD_09,
+    NEM100_SD_ABS_DIFF_1419 = NEM100_SD_19 - NEM100_SD_14,
+  )
 ```
 
-Globalement, il y a eu une évolution `r base_count_diff_0919`% du nombre de résidences principales en NC.
+Globalement, il y a eu une évolution `r 100 * (nrow(bl19) / nrow(bl09) - 1)`% du nombre de résidences principales en NC qui passe de `r nrow(bl09)` en 2009 à `r nrow(bl19)` en 2019.
 Pour une meilleure lisibilité, on sépare la carte du Grand Nouméa (GN) du reste du territoire.
-On voit sur le GN une évolution importante des communes du GN hors Nouméa, en particulier Dumbéa/mer.
-Ici, on sépare les classes avec la méthode `jenks`
 
-```{r, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-plot(iris["COUNT_DIFF_0919"] %>% subset(iris$COMM %in% grand_noumea), main = "Evolution (%) du nombre de logements 2019/2009 GN", axes = FALSE, key.pos = 4, breaks = "jenks", nbreaks = 10)
+### Nombre de logements par IRIS
+
+On voit sur le GN une évolution importante des communes du GN hors Nouméa, en particulier Dumbéa.
+Ici, on sépare les classes avec la méthode `jenks`.
+
+```{r bl-nb-iris-gn}
+iris %>%
+  filter(COMM %in% grand_noumea) %>%
+  select(COUNT_DIFF_0919) %>%
+  plot(
+    main = "Evolution (+%) du nombre de logements 2009-2019 GN",
+    axes = FALSE,
+    key.pos = 4,
+    breaks = "jenks",
+    nbreaks = 10
+  )
 ```
 
-```{r, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-plot(iris["COUNT_DIFF_0919"] %>% subset(iris$COMM %notin% grand_noumea), main = "Evolution (%) du nombre de logements 2019/2009 NC hors GN", axes = FALSE, key.pos = 4, breaks = "jenks", nbreaks = 10)
+```{r bl-nb-iris-nc}
+iris %>%
+  filter(COMM %notin% grand_noumea) %>%
+  select(COUNT_DIFF_0919) %>%
+  plot(
+    main = "Evolution (+%) du nombre de logements 2009-2019 NC hors GN",
+    axes = FALSE,
+    key.pos = 4,
+    breaks = "jenks",
+    nbreaks = 10
+  )
 ```
 
-En affichant les 10 premiers résultats, on constate une forte évolution sur certains IRIS du Grand Nouméa dont Nouville et sur Koné (commune n°11), avec aussi la présence de Canala (n°04) et Houailou (n°08) à l'est. Attention toutefois aux effectifs qui peuvent être très faibles.
+En affichant les premiers résultats, on constate une forte évolution sur certains IRIS du Grand Nouméa dont Nouville et sur Koné (commune n°11), avec aussi la présence de Canala (n°04) et Houailou (n°08) à l'est. Attention toutefois _aux effectifs qui peuvent être **très** faibles_ et qui expliquent certaines augmentation très importantes.
+Ci-dessous, le top 20 des IRIS où le nombre de logements augmente le plus entre 2009 et 2019.
 
-```{r}
+```{r, bl-nb-iris-table}
 iris %>%
   arrange(desc(COUNT_DIFF_0919)) %>%
-  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, COUNT_DIFF_0919, COUNT_09, COUNT_19) %>%
+  select(CODE_IRIS, LIB_IRIS, NOM_COMMUNE, COUNT_DIFF_0919, COUNT_09, COUNT_19) %>%
   st_drop_geometry() %>%
+  column_to_rownames("CODE_IRIS") %>%
   head(20)
 ```
 
 
-On va maintenant s'intéresser à l'évolution de la moyenne du NEM base 100 par IRIS entre 2009 et 2019, ici on colorie selon 10 déciles.
+### Evolution du NEM moyen par IRIS
 
-```{r, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-plot(iris["NEM100_MEAN_DIFF_0919"], main = "Evolution du NEM100 2019/2009 NC", axes = FALSE, key.pos = 4, breaks = "quantile", nbreaks = 10)
+On va maintenant s'intéresser à l'évolution de la moyenne du NEM base 100 par IRIS entre 2009 et 2019, ici on colorie selon 10 déciles du NEM100.
+
+```{r nem-evol-iris-09-19}
+plot(
+  iris["NEM100_MEAN_PC_DIFF_0919"],
+  main = "Evolution (+%) du NEM100 2009-2019 NC",
+  axes = FALSE,
+  key.pos = 4,
+  breaks = "quantile",
+  nbreaks = 10
+)
 ```
 
-```{r}
+```{r nem-evol-iris-09-19-summary}
 iris %>%
-  arrange(desc(NEM100_MEAN_DIFF_0919)) %>%
-  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, NEM100_MEAN_DIFF_0919, NEM100_MEAN_09, NEM100_MEAN_19) %>%
+  arrange(desc(NEM100_MEAN_PC_DIFF_0919)) %>%
+  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, NEM100_MEAN_PC_DIFF_0919, NEM100_MEAN_09, NEM100_MEAN_19) %>%
   st_drop_geometry() %>%
+  column_to_rownames("CODE_IRIS") %>%
   head(20)
 ```
 
 On constate, _avec cette échelle de couleur basée sur 10 quintiles_, une assez franche séparation Nord/Est versus Sud/Ouest
 
+### Evolution de l'écart-type du NEM par IRIS
+
 Maintenant, évaluons l'évolution de l'écart-type du NEM100 par IRIS entre 2009 et 2019. On classe les IRIS par la méthode `sd` en 10 classes.
 
-```{r, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-plot(iris["NEM100_SD_DIFF_0919"], main = "Evolution de l'écart-type du NEM100 2019/2009 NC", axes = FALSE, key.pos = 4, breaks = "sd", nbreaks = 10)
+```{r nem-evol-sd-iris-09-19}
+plot(
+  iris["NEM100_SD_ABS_DIFF_0919"],
+  main = "Evolution (asbolue) de l'écart-type du NEM100 2009-2019 NC",
+  axes = FALSE,
+  key.pos = 4,
+  breaks = "pretty",
+  nbreaks = 5
+)
 ```
 
-L'écart type du NEM100 **a été considérable réduit sur l'ensemble du territoire**, sauf sur les 4 IRIS ci-dessous :
+L'écart type du NEM100 **a été considérable réduit sur l'ensemble du territoire**, sauf sur les IRIS ci-dessous.
+On rappelle que écart-type NC du NEM100 passe de 30.6 en 2009 à 24.2 en 2014 puis 23.5 en 2019, soit un différence de -7.08 points entre 2009 et 2019.
 
-```{r}
+```{r nem-evol-sd-iris-09-19-summary-pos}
 iris %>%
-  arrange(desc(NEM100_SD_DIFF_0919)) %>%
-  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, COUNT_19, NEM100_SD_DIFF_0919, NEM100_MEAN_09, NEM100_MEAN_19, NEM100_SD_09, NEM100_SD_19) %>%
+  arrange(desc(NEM100_SD_ABS_DIFF_0919)) %>%
+  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, COUNT_19, NEM100_SD_ABS_DIFF_0919, NEM100_SD_09, NEM100_SD_19) %>%
   st_drop_geometry() %>%
-  filter(NEM100_SD_DIFF_0919 > 0)
+  column_to_rownames("CODE_IRIS") %>%
+  filter(NEM100_SD_ABS_DIFF_0919 > 0)
 ```
+
+En comparaison, on garde ici les variations les plus importantes.
+
+```{r nem-evol-sd-iris-09-19-summary-desc}
+iris %>%
+  arrange(NEM100_SD_ABS_DIFF_0919) %>%
+  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, COUNT_19, NEM100_SD_ABS_DIFF_0919, NEM100_SD_09, NEM100_SD_19) %>%
+  st_drop_geometry() %>%
+  column_to_rownames("CODE_IRIS") %>%
+  head(10)
+```
+
 
 On proccède similairement pour la différence d'écrt type par IRIS entre 2009 et 2014.
 
-```{r, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-plot(iris["NEM100_SD_DIFF_0914"], main = "Evolution de l'écart-type du NEM100 2014/2009 NC", axes = FALSE, key.pos = 4, breaks = "sd", nbreaks = 10)
+```{r nem-evol-sd-iris-09-14}
+plot(
+  iris["NEM100_SD_ABS_DIFF_0914"],
+  main = "Evolution (asbolue) de l'écart-type du NEM100 2009-2014 NC",
+  axes = FALSE,
+  key.pos = 4,
+  breaks = "pretty",
+  nbreaks = 5
+)
 ```
 
-On retrouve 4 IRIS où l'écart progresse, donc 2 communs
+On retrouve les IRIS où l'écart progresse :
 
-```{r}
+```{r nem-evol-sd-iris-09-14-summary}
 iris %>%
-  arrange(desc(NEM100_SD_DIFF_0914)) %>%
-  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, COUNT_14, NEM100_SD_DIFF_0914, NEM100_MEAN_09, NEM100_MEAN_14, NEM100_SD_09, NEM100_SD_14) %>%
+  arrange(desc(NEM100_SD_ABS_DIFF_0914)) %>%
+  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, COUNT_14, NEM100_SD_ABS_DIFF_0914, NEM100_SD_09, NEM100_SD_14) %>%
   st_drop_geometry() %>%
-  filter(NEM100_SD_DIFF_0914 > 0)
+  column_to_rownames("CODE_IRIS") %>%
+  filter(NEM100_SD_ABS_DIFF_0914 > 0)
 ```
 
-Et de même entre 2014 et 2019. Ici, des écart substantiels apparaissent sur beaucoup plus de communes, on doit changer de système de couleurs.
+Et de même entre 2014 et 2019. Ici, des écart substantiels apparaissent sur beaucoup plus de communes, **attention au changement des classes de couleurs**.
 
 
-```{r, fig.fullwidth = T, fig.height = 10, fig.width = 14}
-plot(iris["NEM100_SD_DIFF_1419"], main = "Evolution de l'écart-type du NEM100 2019/2014 NC", axes = FALSE, key.pos = 4, breaks = "jenks", nbreaks = 10)
+```{r nem-evol-sd-iris-14-19}
+plot(
+  iris["NEM100_SD_ABS_DIFF_1419"],
+  main = "Evolution (absolue) de l'écart-type du NEM100 2014-2019 NC",
+  axes = FALSE,
+  key.pos = 4,
+  breaks = "jenks",
+  nbreaks = 5
+)
 ```
 
 On appréciera mieux avec la liste :
 
-```{r}
+```{r nem-evol-sd-iris-14-19-summary}
 iris %>%
-  arrange(desc(NEM100_SD_DIFF_1419)) %>%
-  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, COUNT_14, NEM100_SD_DIFF_1419, NEM100_MEAN_14, NEM100_MEAN_19, NEM100_SD_14, NEM100_SD_19) %>%
+  arrange(desc(NEM100_SD_ABS_DIFF_1419)) %>%
+  select(NOM_COMMUNE, LIB_IRIS, CODE_IRIS, COUNT_14, NEM100_SD_ABS_DIFF_1419, NEM100_SD_14, NEM100_SD_19) %>%
   st_drop_geometry() %>%
-  filter(NEM100_SD_DIFF_1419 > 0)
+  column_to_rownames("CODE_IRIS") %>%
+  filter(NEM100_SD_ABS_DIFF_1419 > 0)
 ```
 
+## Influence de la distance à la mine
 
+Dans cette partie, nous allons comparer les contributions de différents co-facteurs au NEM100 et en particulier l'influence du facteur de durée de trajet à la mine.
+
+
+### Matrice de desserte
+
+Pour celà on charge en premier _la matrice de desserte_ qui à chaque IRIS fait correspondre la durée _médiane_ (sur les noeuds routiers contenus dans l'IRIS) pour attendre le site minier (mine ou usine) _le plus proche_. 
+Notons que ce calcul est fat essentiellement en SQL, voir le fichier `src-desserte/desserte.sql`.
+
+On remarque que les IRIS de la province des îles, de l'île des Pins et de Belep disparaissent, car il n'y pas de routes, il reste ainsi 158 IRIS.
+Comme précédement, on supprimera les communes du GN de l'étude.
+
+On donne un exemple de la structure de la table de desserte avec 20 IRIS pris au hasard.
+
+```{r load-desserte}
+desserte <- read_csv("./src-desserte/duree_iris.csv") %>%
+  select(code_iris, lib_iris, duree_usine, duree_centre) %>%
+  mutate(
+    duree_min = pmin(duree_usine, duree_centre)
+  ) %>%
+  column_to_rownames("code_iris")
+desserte %>% sample_n(20)
+```
+
+On represente la cartes des distances à l'usine des IRIS.
+
+```{r desserte-usine-plot}
+iris %>%
+  merge(desserte, by.x = "CODE_IRIS", by.y = 0) %>%
+  select("duree_usine") %>%
+  plot(
+    main = "Durée médiane en minutes de trajet à l'usine la plus proche",
+    axes = FALSE,
+    key.pos = 4,
+    breaks = seq(from = 0, to = 15 * ceiling(max(desserte$duree_usine) / 15), by = 15)
+  )
+```
+
+On donne la liste des IRIS par durée décroissante d'accès à l'usine, pour les IRIS à plus d'une heure de trajet.
+Le centre de la grande terre sur les deux côtés et le nord de la côte est sont les plus éloignés des usines.
+
+```{r desserte-usine}
+iris %>%
+  merge(desserte, by.x = "CODE_IRIS", by.y = 0) %>%
+  arrange(desc(duree_usine)) %>%
+  column_to_rownames("CODE_IRIS") %>%
+  select(LIB_IRIS, COMM, NOM_COMMUNE, TYPE, COUNT_19, duree_usine) %>%
+  filter(duree_usine >= 60)
+```
+
+On fait la même chose pour la durée d'accès à un centre minier.
+On voit que **les communes les plus éloignées sont celles de la côte est de la province Nord** comme Hienghène, Touho, Pouébo ou Poindimié.
+
+```{r desserte-centre-plot}
+iris %>%
+  merge(desserte, by.x = "CODE_IRIS", by.y = 0) %>%
+  select("duree_centre") %>%
+  plot(
+    main = "Durée médiane en minutes de trajet au centre minier le plus proche",
+    axes = FALSE,
+    key.pos = 4,
+    breaks = seq(from = 0, to = 15 * ceiling(max(desserte$duree_centre) / 15), by = 15)
+  )
+```
+
+```{r desserte-centre}
+iris %>%
+  merge(desserte, by.x = "CODE_IRIS", by.y = 0) %>%
+  arrange(desc(duree_centre)) %>%
+  column_to_rownames("CODE_IRIS") %>%
+  select(LIB_IRIS, COMM, NOM_COMMUNE, TYPE, COUNT_19, duree_centre) %>%
+  filter(duree_centre >= 60)
+```
+
+Enfin, on dessine la carte des durées de trajet vers les centres miniers **ou** les usines métallurgiques.
+On remarque que le maillage des centre miniers est suffisament dense pour masquer celui des usines : la carte est sensiblement la même que la précédente.
+
+
+```{r desserte-min-plot}
+iris %>%
+  merge(desserte, by.x = "CODE_IRIS", by.y = 0) %>%
+  select("duree_min") %>%
+  plot(
+    main = "Durée médiane en minutes de trajet au centre minier ou l'usine métallurgique la plus proche",
+    axes = FALSE,
+    key.pos = 4,
+    breaks = seq(from = 0, to = 15 * ceiling(max(desserte$duree_min) / 15), by = 15)
+  )
+```
 
 ### Regressions sur le NEM
 
-On va comparer l'influence de la distance à une usine métallurgique et de la CSP sur le NEM100
-Pour celà on va charger en premier _la matrice de desserte_ qui à chaque IRIS fait correspondre la durée médiane pour attendre le site minier (mine ou usine) le plus proche.
-Les IRIS de la province des îles disparaissent. On va aussi supprimer les communes du GN.
-On donne un exemple de la structure de la table de desserte.
+On souhaite évaluer l'influence de la distance à la mine et la comparer aux variables `PROV`, `CS8`, `AGER`, `DIPL` sur le NEM100.
+Les co-facteurs d'intérêt sont tous mis sous forme catégorielle.
+L'analyse va porter ici sur la BI 2019 jointe à la BL via l'identifiant de logement `IDLOG`.
+On note qu'il y a `r bi19_r %>% filter(CS8 <=6, NC %notin% grand_noumea) %>% nrow()` actifs hors du GN dans la BI 2019.
 
-```{r, message=F, warning=F}
-desserte <- read_csv("./src-desserte/duree_iris.csv") %>% filter(code_commune %notin% grand_noumea)
-
-bl09_desserte <- merge(bl09, desserte, by.x = "IRISUNC", by.y = "code_iris")
-bl14_desserte <- merge(bl14, desserte, by.x = "IRISUNC", by.y = "code_iris")
-bl19_desserte <- merge(bl19, desserte, by.x = "IRISUNC", by.y = "code_iris")
-
-desserte %>% head(20)
-```
-
-
-On construit un modèle _logit_ `NEM100 ~ PROV + DUREE_USINE_QUART + DIPLM_ + AGERM_ + CS8M_` (NDA : erreur d'encodage ici) après avoir préparé les données.
-
-```{r, message=F, warning=F}
+```{r load-desserte-enrich}
 # on va créer quelques colonnes catégorielles correctement labélisées
-bl19_desserte$CS8M_ <- relevel(factor(bl19_desserte$CS8M, labels = cs8m_label), ref = 1)
-bl19_desserte$DIPLM_ <- relevel(factor(bl19_desserte$DIPLM, labels = diplm_label), ref = 1)
-bl19_desserte$AGERM_ <- factor(I(10*floor(bl19_desserte$AGERM / 10)))
-bl19_desserte$DUREE_USINE_QUART <-  paste0("DUR_", factor(I(floor(bl19_desserte$duree_usine / 15))))
-bl19_desserte$DUREE_CENTRE_QUART <-  paste0("DUR_", factor(I(floor(bl19_desserte$duree_centre / 15))))
-bl19_desserte$DUREE_QUART <-  paste0("DUR_", factor(I(floor(pmin(bl19_desserte$duree_centre, bl19_desserte$duree_usine) / 15))))
-# découpage en déciles du NEM100
-bl19_desserte$NEM100_DEC <- paste0("NEM_", factor(I(ntile(bl19_desserte$NEM100, n = 10))))
+bl19_desserte <- bl19_bi19 %>%
+  filter(NC_BL %notin% grand_noumea) %>%
+  merge(desserte, by.x = "IRISUNC_BL", by.y = 0) %>%
+  mutate(
+    # diplome regroupés
+    DIPLR_ = relevel(factor(DIPLR, labels = diplm_labels), ref = 1),
+    # CSP
+    CS8_ = relevel(factor(CS8, labels = cs8m_labels[1:6]), ref = 1),
+    # age révolu à la 10aine ~ groupe d'age décennal
+    AGER_ = factor(I(10 * floor(AGER / 10))),
+    # durée en 1/4 heures de trajets
+    DUREE_USINE_QUART = paste0("DUR_", factor(I(floor(duree_usine / 15)))),
+    DUREE_CENTRE_QUART = paste0("DUR_", factor(I(floor(duree_centre / 15)))),
+    DUREE_QUART = paste0("DUR_", factor(I(floor(duree_min / 15)))),
+    # découpage en déciles du NEM100
+    NEM100_DEC = paste0("NEM_", factor(I(ntile(NEM100, n = 10))))
+  )
 ```
 
-```{r, message=F, warning=F}
-model <- glm(NEM100 ~ PROV + DUREE_USINE_QUART + DIPLM_ + AGERM_ + CS8M_, data = bl19_desserte)
+Après jointure, on obtient `r nrow(bl19_desserte)` individus étudiés.
+Sur ce modèle on constante ci-dessous :
+
+- l'influence positive substantielle **positive** sur le `NEM100` des facteurs suivants :
+  - la province (`PROV_BL`)
+  - du diplôme (`DIPLR_`) selon la durée des études
+  - du groupe d'âge décennal (`AGER_`) croissant
+  - de la CSP (`CS8_`) 
+- l'influence **négative** du nombre de 1/4 d'heures de trajets à une usine, avec toutefois un anneau indéterminé entre 45 et 60 de trajet (facteur `DUREE_USINE_QUARTDUR_3`). 
+
+On remarque aussi que les 1/4 d'heures de trajets ne sont **pas ordonnés**, ce qui témoigne **d'une limite de ce facteur**.
+
+```{r desserte-model-glm}
+model <- glm(NEM100 ~ PROV_BL + DUREE_USINE_QUART + DIPLR_ + AGER_ + CS8_, data = bl19_desserte)
 summary(model)
 ```
 
-Sur ce modèle on constante :
+Avec la représentation par analyse factorielle des correspondances sur les déciles du NEM base 100 on remarque :
 
-- l'influence positive substantielle du `DIPLM` et de `AGE` sur le `NEM100`
-- l'influence **négative** du nombre de 1/4 d'heure de trajets à un site minier, avec toutefois un anneau indéterminé entre 45 et 60 de trajet
+- que l'axe des x est **parfaitement ordonné** selon les déciles du NEM100,
+- l'ordre des durées de trajet à l'usine est bien moins représenté,
+- que le premier facteur catpure 92.3% de la variance.
 
-Avec la représentation par analyse des correspondance on remarque
-
-- que l'axe des x est **parfaitement ordonné** selon les déciles du NEM100
-- que ce même axe représente moins bien l'ordre des durées de trajet à l'usine
-- un effet Guttman très fort
-
-
-
-```{r, warning=F, fig.fullwidth = T, fig.height = 10, fig.width = 14}
+```{r nem-desserte-ca}
 df <- bl19_desserte %>%
-  group_by(NEM100_DEC, DUREE_USINE_QUART, .add=TRUE) %>%
+  group_by(NEM100_DEC, DUREE_USINE_QUART, .add = TRUE) %>%
   summarise(
     nb = n()
   ) %>%
@@ -676,23 +958,21 @@ plot(ca_bl19_desserte, title = "CA durée d'accès à l'usine (1/4 heure) VS dé
 ```
 
 
-```{r, warning=F}
+```{r nem-desserte-ca-summary}
 summary(ca_bl19_desserte)
 ```
 
-
-On va faire similairement avec la durée au centre minier et celles globables usine ou centre.
-
+On va faire similairement avec la durée au centre minier et celles globables (usine ou centre) avec les mêmes co-facteurs.
 Pour les centres miniers, la corrélation est moins nette sur la durée de trajet.
 
-```{r, message=F, warning=F}
-model <- glm(NEM100 ~ PROV + DUREE_CENTRE_QUART + DIPLM_ + AGERM_ + CS8M_, data = bl19_desserte)
+```{r nem-desserte-ca-centre}
+model <- glm(NEM100 ~ PROV_BL + DUREE_CENTRE_QUART + DIPLR_ + AGER_ + CS8_, data = bl19_desserte)
 summary(model)
 ```
 
 Ce qui impact la durée minimum centre ou usine.
 
-```{r, message=F, warning=F}
-model <- glm(NEM100 ~ PROV + DUREE_QUART + DIPLM_ + AGERM_ + CS8M_, data = bl19_desserte)
+```{r nem-desserte-ca-tous}
+model <- glm(NEM100 ~ PROV_BL + DUREE_QUART + DIPLR_ + AGER_ + CS8_, data = bl19_desserte)
 summary(model)
 ```
