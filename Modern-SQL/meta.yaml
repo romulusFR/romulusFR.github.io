@@ -1,0 +1,33 @@
+# title: défini dans le .md
+subtitle: SQL Moderne
+author: THION Romuald
+date: Café developpeur LIRIS avril 2023
+
+lang: "fr-FR"
+babel-lang: "french"
+mainfont: "Palatino"
+colorlinks: true
+header-includes:
+  - \usepackage{fullpage}
+  - \DeclareUnicodeCharacter{250C}{-} # ┌
+  - \DeclareUnicodeCharacter{2500}{--} # ─
+  - \DeclareUnicodeCharacter{2510}{-} # ┐
+  - \DeclareUnicodeCharacter{2502}{|} # │
+  - \DeclareUnicodeCharacter{251C}{|} # ├
+  - \DeclareUnicodeCharacter{2524}{|} # ┤
+  - \DeclareUnicodeCharacter{2514}{-} # └
+  - \DeclareUnicodeCharacter{2518}{-} # ┘
+  - \DeclareUnicodeCharacter{252C}{-} # ┬
+  - \DeclareUnicodeCharacter{253C}{|} # ┼
+  - \DeclareUnicodeCharacter{2205}{Ø} # ∅
+  - \DeclareUnicodeCharacter{2534}{-} # ┴
+  - \DeclareUnicodeCharacter{21B5}{} # ↵
+
+# revealjs-url: "/home/romulus/Install/reveal.js"
+progress: true
+slideNumber: true
+width: 960
+height: 700
+margin: 0.02
+minScale: 0.5
+maxScale: 1.0
