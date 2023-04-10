@@ -1,3 +1,4 @@
+# pylint: disable=logging-fstring-interpolation
 """comparaison de performance de requêtes SQL
 
 Installez les modules suivants avec pip :
@@ -6,12 +7,12 @@ python3 -m pip install -r requirements.txt
 
 Ensuite, créer un fichier .env dans le même dossier que bench.py avec le contenu suivant
 
-USER=bdav
-PASSWORD=bdav
+USER=cafe
+PASSWORD=cafe
 HOST=localhost
 PORT=5432
-DATABASE=bdav
-SCHEMA=bdav
+DATABASE=cafe
+SCHEMA=cafe
 
 """
 import argparse
@@ -58,7 +59,7 @@ def get_parser():
         metavar="FILENAME",
         nargs="+",
         action="store",
-        help="fichier à lire",
+        help="fichier(s) à lire",
     )
 
     parser.add_argument(
@@ -87,6 +88,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=DEBUG_LEVEL)
     logger.debug(args)
     logger.debug(CONN_PARAMS)
+    logger.debug(f"psycopg: {psycopg.__version__}, libpq: {psycopg.pq.version()}")
 
     if args.repeat < 2:
         raise ValueError(
