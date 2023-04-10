@@ -16,16 +16,21 @@ SCHEMA=cafe
 
 """
 import argparse
+import asyncio
 import logging
 import statistics as stat
 import urllib.parse
 from collections import defaultdict
 from pathlib import Path
+from time import perf_counter, time
 from typing import DefaultDict
 
-from tqdm import tqdm
 import psycopg
+from psycopg_pool import AsyncConnectionPool
 from dotenv import dotenv_values
+from tqdm import tqdm
+from tqdm.asyncio import tqdm as atqdm
+
 
 logger = logging.getLogger("PERF")
 
@@ -42,7 +47,7 @@ def get_parser():
     """Configuration de argparse pour les options de ligne de commandes"""
     parser = argparse.ArgumentParser(
         prog=f"python {Path(__file__).name}",
-        description="Comparaison des performances entre deux requêtes SQL. Ajoute implicitement et automatiquement une commande EXPLAIN.",  # pylint: disable=line-too-long
+        description="Comparaison des performances entre deux requêtes SQL. Préfixe utomatiquement avec une commande EXPLAIN.",  # pylint: disable=line-too-long
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -52,6 +57,15 @@ def get_parser():
         action="count",
         default=0,
         help="niveau de verbosité, -v pour INFO, -vv pour DEBUG. WARNING par défaut",
+    )
+
+    parser.add_argument(
+        "--async",
+        "-a",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="active le mode asynchrone de psycog. False par défaut",
+        dest="with_async",
     )
 
     parser.add_argument(
@@ -73,7 +87,54 @@ def get_parser():
     return parser
 
 
+def do_sync(filenames: list[str], repeat):
+    """version SYNC"""
+    res: DefaultDict[str, list[float]] = defaultdict(list)
+    with psycopg.connect(CONN_PARAMS) as conn:  # pylint: disable=not-context-manager
+        with conn.cursor() as cur:
+            for filename in filenames:
+                with open(filename, "r", encoding="utf-8") as file:
+                    logger.info("reading %s...", filename)
+                    sql_content = file.read()
+                    logger.debug("content\n%s", sql_content)
+
+                    for i in tqdm(range(repeat)):
+                        logger.debug("SYNChronous query #%i", i)
+                        cur.execute(EXPLAIN + sql_content)
+                        res_time = cur.fetchone()[0][0]["Execution Time"]  # type: ignore
+                        res[filename].append(res_time)
+                logger.info("...%s done", filename)
+    return res
+
+
+async def do_async(filenames: list[str], repeat):
+    """version ASYNC"""
+    res: DefaultDict[str, list[float]] = defaultdict(list)
+    pool = AsyncConnectionPool(CONN_PARAMS, min_size=2, max_size=repeat)
+
+    async def async_job(cur, id_job):
+        logger.debug("ASYNChronous query #%i", id_job)
+        await cur.execute(EXPLAIN + sql_content)
+        data = await cur.fetchone()
+        return data[0][0]["Execution Time"]
+
+    # async with await psycopg.AsyncConnection.connect(CONN_PARAMS) as aconn:
+    async with pool.connection() as aconn:
+        for filename in filenames:
+            with open(filename, "r", encoding="utf-8") as file:
+                logger.info("reading %s...", filename)
+                sql_content = file.read()
+                logger.debug("content\n%s", sql_content)
+                async with aconn.cursor() as cur:
+                    # tqdm overload of asyncio.gather
+                    res_times = await atqdm.gather(*[async_job(cur, i) for i in range(repeat)])
+                    res[filename] = res_times
+                logger.info("...%s done", filename)
+    return res
+
+
 EXPLAIN = "EXPLAIN (ANALYZE, TIMING, FORMAT JSON) "
+
 
 if __name__ == "__main__":
     args = get_parser().parse_args()
@@ -86,96 +147,25 @@ if __name__ == "__main__":
         DEBUG_LEVEL = logging.WARNING
 
     logging.basicConfig(level=DEBUG_LEVEL)
-    logger.debug(args)
+    logger.debug(vars(args))
     logger.debug(CONN_PARAMS)
     logger.debug(f"psycopg: {psycopg.__version__}, libpq: {psycopg.pq.version()}")
 
     if args.repeat < 2:
-        raise ValueError(
-            f"must specify at least 2 repetitions, only {args.repeat} given"
-        )
+        raise ValueError(f"must specify at least 2 repetitions, only {args.repeat} given")
 
-    logger.info("Launching %i times each query", args.repeat)
-    with psycopg.connect(CONN_PARAMS) as conn:  # pylint: disable=not-context-manager
-        results: DefaultDict[str, list[float]] = defaultdict(list)
+    logger.info("Launching %i times each query (async=%s)", args.repeat, args.with_async)
 
-        # Open a cursor to perform database operations
-        with conn.cursor() as cur:
-            for filename in args.filenames:
-                with open(filename, "r", encoding="utf-8") as file:
-                    logger.info("reading %s...", filename)
-                    sql_content = file.read()
-                    logger.debug("content\n%s", sql_content)
+    start_time = time()
+    if args.with_async:
+        results = asyncio.run(do_async(args.filenames, args.repeat))
+    else:
+        results = do_sync(args.filenames, args.repeat)
+    end_time = time()
 
-                    for _ in tqdm(range(args.repeat)):
-                        cur.execute(EXPLAIN + sql_content)
-                        res = cur.fetchone()[0][0]["Execution Time"]  # type: ignore
-                        results[filename].append(res)
-                    logger.info("...%s done", filename)
     length = max(len(filename) for filename in args.filenames)
     for key, vals in results.items():
         print(
-            f"{key}, mean = {stat.mean(vals):.2f} ms, stdev = {stat.stdev(vals):.2f} ms, median = {stat.median(vals):.2f} ms"
+            f"{key}, mean = {stat.mean(vals):.2f} ms, stdev = {stat.stdev(vals):.2f} ms, median = {stat.median(vals):.2f} ms"  # pylint: disable=line-too-long
         )
-        # print(f"quartiles {stat.quantiles(vals, n=4)}")
-
-
-# format du retour de fetchone()
-# [
-#     {
-#         "Plan": {
-#             "Node Type": "WindowAgg",
-#             "Parallel Aware": False,
-#             "Async Capable": False,
-#             "Startup Cost": 11143.12,
-#             "Total Cost": 13393.12,
-#             "Plan Rows": 100000,
-#             "Plan Width": 50,
-#             "Actual Startup Time": 280.394,
-#             "Actual Total Time": 400.407,
-#             "Actual Rows": 100000,
-#             "Actual Loops": 1,
-#             "Plans": [
-#                 {
-#                     "Node Type": "Sort",
-#                     "Parent Relationship": "Outer",
-#                     "Parallel Aware": False,
-#                     "Async Capable": False,
-#                     "Startup Cost": 11143.12,
-#                     "Total Cost": 11393.12,
-#                     "Plan Rows": 100000,
-#                     "Plan Width": 18,
-#                     "Actual Startup Time": 280.34,
-#                     "Actual Total Time": 306.645,
-#                     "Actual Rows": 100000,
-#                     "Actual Loops": 1,
-#                     "Sort Key": ["depname"],
-#                     "Sort Method": "external merge",
-#                     "Sort Space Used": 2936,
-#                     "Sort Space Type": "Disk",
-#                     "Plans": [
-#                         {
-#                             "Node Type": "Seq Scan",
-#                             "Parent Relationship": "Outer",
-#                             "Parallel Aware": False,
-#                             "Async Capable": False,
-#                             "Relation Name": "emp",
-#                             "Alias": "emp",
-#                             "Startup Cost": 0.0,
-#                             "Total Cost": 1637.0,
-#                             "Plan Rows": 100000,
-#                             "Plan Width": 18,
-#                             "Actual Startup Time": 0.008,
-#                             "Actual Total Time": 11.869,
-#                             "Actual Rows": 100000,
-#                             "Actual Loops": 1,
-#                         }
-#                     ],
-#                 }
-#             ],
-#         },
-#         "Planning Time": 0.069,
-#         "Triggers": [],
-#         "Execution Time": 407.003,
-#     }
-# ]
+    logger.info("Total running time %.2f", end_time - start_time)
