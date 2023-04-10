@@ -87,53 +87,60 @@ def get_parser():
     return parser
 
 
-def do_sync(filenames: list[str], repeat):
+def do_sync(queries: dict[str, str], repeat):
     """version SYNC"""
     res: DefaultDict[str, list[float]] = defaultdict(list)
     with psycopg.connect(CONN_PARAMS) as conn:  # pylint: disable=not-context-manager
         with conn.cursor() as cur:
-            for filename in filenames:
-                with open(filename, "r", encoding="utf-8") as file:
-                    logger.info("reading %s...", filename)
-                    sql_content = file.read()
-                    logger.debug("content\n%s", sql_content)
-
-                    for i in tqdm(range(repeat)):
-                        logger.debug("SYNChronous query #%i", i)
-                        cur.execute(EXPLAIN + sql_content)
-                        res_time = cur.fetchone()[0][0]["Execution Time"]  # type: ignore
-                        res[filename].append(res_time)
+            for filename, query in queries.items():
+                for i in tqdm(range(repeat)):
+                    logger.debug("SYNChronous query #%i", i)
+                    cur.execute(EXPLAIN + query)
+                    res_time = cur.fetchone()[0][0]["Execution Time"]  # type: ignore
+                    res[filename].append(res_time)
                 logger.info("...%s done", filename)
     return res
 
 
-async def do_async(filenames: list[str], repeat):
+async def do_async(queries: dict[str, str], repeat):
     """version ASYNC"""
     res: DefaultDict[str, list[float]] = defaultdict(list)
-    pool = AsyncConnectionPool(CONN_PARAMS, min_size=2, max_size=repeat)
+    pool = AsyncConnectionPool(CONN_PARAMS, min_size=4, max_size=repeat)
 
-    async def async_job(cur, id_job):
+    async def async_job(cur, query, id_job=-1):
         logger.debug("ASYNChronous query #%i", id_job)
-        await cur.execute(EXPLAIN + sql_content)
+        await cur.execute(EXPLAIN + query)
         data = await cur.fetchone()
         return data[0][0]["Execution Time"]
 
     # async with await psycopg.AsyncConnection.connect(CONN_PARAMS) as aconn:
-    async with pool.connection() as aconn:
-        for filename in filenames:
-            with open(filename, "r", encoding="utf-8") as file:
-                logger.info("reading %s...", filename)
-                sql_content = file.read()
-                logger.debug("content\n%s", sql_content)
-                async with aconn.cursor() as cur:
-                    # tqdm overload of asyncio.gather
-                    res_times = await atqdm.gather(*[async_job(cur, i) for i in range(repeat)])
-                    res[filename] = res_times
+
+    # avec ces boucles, c'est un lancement async sur la même connection : pas de // effective de PG
+    # async with pool.connection() as aconn:
+    #     for filename in filenames:
+    #         async with aconn.cursor() as cur:
+    #             res_times = await atqdm.gather(*[async_job(cur, i) for i in range(repeat)])
+
+    for filename, query in queries.items():
+        async with pool.connection() as aconn:
+            async with aconn.cursor() as cur:
+                # tqdm overload of asyncio.gather
+                res_times = await atqdm.gather(*[async_job(cur, query, i) for i in range(repeat)])
+                res[filename] = res_times
                 logger.info("...%s done", filename)
     return res
 
 
 EXPLAIN = "EXPLAIN (ANALYZE, TIMING, FORMAT JSON) "
+
+
+def read_sql_files(filenames):
+    """Reads files and returns (SQL) contents"""
+
+    for filename in args.filenames:
+        with open(filename, "r", encoding="utf-8") as file:
+            logger.info("loading %s...", filename)
+            yield filename, file.read()
 
 
 if __name__ == "__main__":
@@ -156,16 +163,21 @@ if __name__ == "__main__":
 
     logger.info("Launching %i times each query (async=%s)", args.repeat, args.with_async)
 
+    sql_contents = dict(read_sql_files(args.filenames))
+    if DEBUG_LEVEL >= logging.DEBUG:
+        for k, v in sql_contents.items():
+            logger.debug("file %s\n%s", k, v)
+
     start_time = time()
     if args.with_async:
-        results = asyncio.run(do_async(args.filenames, args.repeat))
+        results = asyncio.run(do_async(sql_contents, args.repeat))
     else:
-        results = do_sync(args.filenames, args.repeat)
+        results = do_sync(sql_contents, args.repeat)
     end_time = time()
 
-    length = max(len(filename) for filename in args.filenames)
+    logger.info("Total running time %.2f", end_time - start_time)
+    # max_length = max(len(filename) for filename in args.filenames)
     for key, vals in results.items():
         print(
             f"{key}, mean = {stat.mean(vals):.2f} ms, stdev = {stat.stdev(vals):.2f} ms, median = {stat.median(vals):.2f} ms"  # pylint: disable=line-too-long
         )
-    logger.info("Total running time %.2f", end_time - start_time)
