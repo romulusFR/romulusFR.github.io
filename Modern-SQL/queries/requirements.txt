@@ -1,0 +1,3 @@
+python-dotenv # attention à ce nom
+psycopg
+tqdm
