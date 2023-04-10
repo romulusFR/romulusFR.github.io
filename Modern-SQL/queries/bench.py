@@ -21,16 +21,16 @@ import logging
 import statistics as stat
 import urllib.parse
 from collections import defaultdict
+from itertools import product
 from pathlib import Path
 from time import perf_counter, time
 from typing import DefaultDict
 
 import psycopg
-from psycopg_pool import AsyncConnectionPool
 from dotenv import dotenv_values
+from psycopg_pool import AsyncConnectionPool, ConnectionPool
 from tqdm import tqdm
 from tqdm.asyncio import tqdm as atqdm
-
 
 logger = logging.getLogger("PERF")
 
@@ -90,7 +90,9 @@ def get_parser():
 def do_sync(queries: dict[str, str], repeat):
     """version SYNC"""
     res: DefaultDict[str, list[float]] = defaultdict(list)
-    with psycopg.connect(CONN_PARAMS) as conn:  # pylint: disable=not-context-manager
+    pool = ConnectionPool(CONN_PARAMS)
+    # with psycopg.connect(CONN_PARAMS) as conn:  # pylint: disable=not-context-manager
+    with pool.connection() as conn:
         with conn.cursor() as cur:
             for filename, query in queries.items():
                 for i in tqdm(range(repeat)):
@@ -105,29 +107,32 @@ def do_sync(queries: dict[str, str], repeat):
 async def do_async(queries: dict[str, str], repeat):
     """version ASYNC"""
     res: DefaultDict[str, list[float]] = defaultdict(list)
-    pool = AsyncConnectionPool(CONN_PARAMS, min_size=4, max_size=repeat)
+    pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, 20))
 
-    async def async_job(cur, query, id_job=-1):
-        logger.debug("ASYNChronous query #%i", id_job)
-        await cur.execute(EXPLAIN + query)
-        data = await cur.fetchone()
-        return data[0][0]["Execution Time"]
+    async def async_job(filename, query, id_job=-1):
+        async with pool.connection() as aconn:
+            async with aconn.cursor() as cur:
+                logger.debug("ASYNChronous query #%i for '%s'", id_job, filename)
+                await cur.execute(EXPLAIN + query)
+                data = await cur.fetchone()
+                return filename, data[0][0]["Execution Time"]
 
     # async with await psycopg.AsyncConnection.connect(CONN_PARAMS) as aconn:
 
     # avec ces boucles, c'est un lancement async sur la même connection : pas de // effective de PG
+    # il faut passer dans la task
+
     # async with pool.connection() as aconn:
     #     for filename in filenames:
     #         async with aconn.cursor() as cur:
     #             res_times = await atqdm.gather(*[async_job(cur, i) for i in range(repeat)])
 
-    for filename, query in queries.items():
-        async with pool.connection() as aconn:
-            async with aconn.cursor() as cur:
-                # tqdm overload of asyncio.gather
-                res_times = await atqdm.gather(*[async_job(cur, query, i) for i in range(repeat)])
-                res[filename] = res_times
-                logger.info("...%s done", filename)
+    # tqdm overload of asyncio.gather
+    res_times = await atqdm.gather(
+        *[async_job(f, q, i) for (f, q), i in product(queries.items(), range(repeat))], total=len(queries) * repeat
+    )
+    for f, t in res_times:
+        res[f].append(t)
     return res
 
 
@@ -137,7 +142,7 @@ EXPLAIN = "EXPLAIN (ANALYZE, TIMING, FORMAT JSON) "
 def read_sql_files(filenames):
     """Reads files and returns (SQL) contents"""
 
-    for filename in args.filenames:
+    for filename in filenames:
         with open(filename, "r", encoding="utf-8") as file:
             logger.info("loading %s...", filename)
             yield filename, file.read()
@@ -176,8 +181,8 @@ if __name__ == "__main__":
     end_time = time()
 
     logger.info("Total running time %.2f", end_time - start_time)
-    # max_length = max(len(filename) for filename in args.filenames)
+    max_length = max(len(filename) for filename in args.filenames)
     for key, vals in results.items():
         print(
-            f"{key}, mean = {stat.mean(vals):.2f} ms, stdev = {stat.stdev(vals):.2f} ms, median = {stat.median(vals):.2f} ms"  # pylint: disable=line-too-long
+            f"{key:<{max_length}} mean = {stat.mean(vals):.2f} ms, stdev = {stat.stdev(vals):.2f} ms, median = {stat.median(vals):.2f} ms"  # pylint: disable=line-too-long
         )
