@@ -1,0 +1,9 @@
+Liens exposé du 2023-04-26 sur les données 2019 à l'ISEE
+
+- slides : <https://romulusfr.github.io/isee-rp19/2023-04-26-talk/talk.html>
+- rapport : <https://romulusfr.github.io/isee-rp19/etude_nem_2009_2014_2019.html>
+- source R :<https://romulusfr.github.io/isee-rp19/etude_nem_2009_2014_2019.Rmd>
+- poids du NEM
+  - [par communes](https://romulusfr.github.io/isee-rp19/output/nem_communes.csv)
+  - [par IRIS](https://romulusfr.github.io/isee-rp19/output/nem_iris.csv>)
+  - [poids du NEM](https://romulusfr.github.io/isee-rp19/output/nem_weights.csv)
