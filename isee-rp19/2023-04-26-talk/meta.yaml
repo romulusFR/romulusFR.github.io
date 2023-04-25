@@ -1,0 +1,14 @@
+# title: défini dans le .md
+title: CNRT Mine et Territoires
+subtitle: Niveau d'équipement des ménages 2009‐2014‐2019
+author: THION Romuald, GOROHOUNA Samuel
+date: Mercredi 26 avril 2023
+
+# revealjs-url: "/home/romulus/Install/reveal.js"
+progress: true
+slideNumber: true
+width: 960
+height: 700
+margin: 0.02
+minScale: 0.5
+maxScale: 1.0
