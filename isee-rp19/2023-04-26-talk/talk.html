@@ -87,25 +87,6 @@ situ</em> et le Teams <code>Data​</code></li>
 </ul></li>
 </ul>
 </section>
-
-<section id="travail-réalisé" class="title-slide slide level2">
-<h2>Travail réalisé</h2>
-
-</section>
-<section id="détails-sur-les-données" class="slide level3">
-<h3>Détails sur les données</h3>
-<p>Variables d’équipement ménages : ELEC, EAU, BATI, BAIN, WC, MAL
-(ajouté), REFRI, CLIM, CHOS, TFIXE, INTER, VOIT, BATO, DEROU</p>
-<p>Cofacteurs d’analyse</p>
-<ul>
-<li>code IRIS (variable <code>IRISUNC</code>),</li>
-<li>commune (variable <code>NC</code>)</li>
-<li>province (variable <code>PROV</code>)</li>
-<li>CSP (8 postes) (variable <code>CS8M</code>)</li>
-<li>diplôme (variable <code>DIPLM</code>)</li>
-<li>age révolu (variable <code>AGERM</code>)</li>
-</ul>
-</section>
 <section id="priorités-identifiées-le-2022-11-28" class="slide level3">
 <h3>Priorités identifiées le 2022-11-28</h3>
 <ul>
@@ -157,16 +138,264 @@ du NEM</a></li>
 </ul></li>
 </ul>
 </section>
-
-<section id="conclusions" class="title-slide slide level2">
-<h2>Conclusions</h2>
+<section id="données-concernés" class="slide level3">
+<h3>Données concernés</h3>
 <ul>
-<li>définition de la variable <code>Mine</code>
+<li>résidences principales</li>
+<li>ménages <strong>hors</strong> du Grand-Nouméa (GN)
 <ul>
-<li>industries extractives sauf carrières hors secteur nickel.</li>
+<li>effet très limité sur les évolutions du NEM</li>
+<li>améliore la qualité des regressions.</li>
+</ul></li>
+<li>volumes
+<ul>
+<li>2009 : 22090 ménages / 70 variables,</li>
+<li>2014 : 25477 ménages / 73 variables,</li>
+<li>2019 : 27613 ménages / 76 variables,
+<ul>
+<li>111467 individus BI</li>
+</ul></li>
 </ul></li>
 </ul>
-<p>Une note “perso” orale</p>
+</section>
+<section id="variables-étudiées" class="slide level3">
+<h3>Variables étudiées</h3>
+<h4 id="variables-déquipement-ménages">Variables d’équipement
+ménages</h4>
+<p><code>NEM</code> et <code>NEM100</code> construits à partir de
+<code>ELEC</code>, <code>EAU</code>, <code>BATI/TYPC14</code>,
+<code>BAIN</code>, <code>WC</code>, <code>MAL</code> (ajouté),
+<code>REFRI</code>, <code>CLIM</code>, <code>CHOS</code>,
+<code>TFIXE</code>, <code>INTER</code>, <code>VOIT</code> (re-codé),
+<code>BATO</code> (re-codé), <code>DEROU</code> (re-codé),
+<del><code>TMOB</code></del>, <del><code>ORDI</code></del>.</p>
+<h4 id="cofacteurs-danalyse">Cofacteurs d’analyse</h4>
+<ul>
+<li>code IRIS (variable <code>IRISUNC</code>),</li>
+<li>commune (variable <code>NC</code>)</li>
+<li>province (variable <code>PROV</code>)</li>
+<li>CSP (8 postes) (variable <code>CS8M</code>)</li>
+<li>diplôme (variable <code>DIPLM/DIPLM14</code>)</li>
+<li>age révolu (variable <code>AGERM</code>)</li>
+<li>ethnie (variable <code>RETH</code>)</li>
+<li>employeur nickel (variable <code>MINE</code>)
+<ul>
+<li>industries extractives sauf celles hors secteur nickel (e.g.,
+carrières).</li>
+</ul></li>
+<li>durée de trajet à la mine (matrice de desserte, variable
+<code>DUREE</code>)</li>
+</ul>
+</section>
+
+<section id="résultats" class="title-slide slide level2">
+<h2>Résultats</h2>
+
+</section>
+<section id="contributions-des-équipements-au-nem" class="slide level3">
+<h3>Contributions des équipements au NEM</h3>
+<ul>
+<li>Sensibilités des poids du <code>NEM</code> selon codage
+<ul>
+<li>peu d’impact <em>in fine</em> sur les variations base 100
+(<code>NEM100</code>)</li>
+</ul></li>
+<li>Les <em>groupements</em> d’équipements
+<ul>
+<li><code>CLIM</code>, <code>TFIXE</code>, <code>INTER</code> et
+<code>CHOS</code></li>
+<li><code>REFRI</code>, <code>ELEC</code>, <code>BAIN</code>,
+<code>WC</code>, <code>EAU</code>, <code>BATI</code> et
+<code>MAL</code></li>
+<li><code>BATO</code>, <code>DEROU</code> et <code>VOIT</code> (fortes
+variations)</li>
+</ul></li>
+</ul>
+</section>
+<section class="slide level3">
+
+<h4 id="exemples">Exemples</h4>
+<figure>
+<img data-src="./img/afc_equip_csp.png" alt="AFC équipements/CSP" />
+<figcaption aria-hidden="true">AFC équipements/CSP</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<figure>
+<img data-src="./img/afc_equip_ethnie.png"
+alt="AFC équipements/ethnie" />
+<figcaption aria-hidden="true">AFC équipements/ethnie</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<h4 id="conclusions-sur-la-constitution-du-nem">Conclusions sur la
+constitution du NEM</h4>
+<ul>
+<li>la méthode <em>top 5 des axes de l’ACP</em> semble avoir un effet
+limité
+<ul>
+<li>le re-codage des variables a plus d’impact</li>
+</ul></li>
+<li>voir une analyse différenciée par groupe d’équipements</li>
+<li>les ordres <em>naturels</em> confortent les % d’inertie
+capturés</li>
+</ul>
+</section>
+<section id="distributions-et-évolutions-du-nem" class="slide level3">
+<h3>Distributions et évolutions du NEM</h3>
+<p>On veut savoir comment le NEM (base 100) évolue spatialement et
+temporellement.</p>
+</section>
+<section class="slide level3">
+
+<h4 id="exemples-dévolutions-du-nem">Exemples d’évolutions du NEM</h4>
+<figure>
+<img data-src="img/violin_nem_province.png"
+alt="Evolutions du NEM par province" />
+<figcaption aria-hidden="true">Evolutions du NEM par
+province</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<figure>
+<img data-src="img/violin_nem_vkpp.png"
+alt="NEM par IRIS de VKPP en 2019" />
+<figcaption aria-hidden="true">NEM par IRIS de VKPP en 2019</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<h4 id="exemples-de-distributions-du-nem">Exemples de distributions du
+NEM</h4>
+<figure>
+<img data-src="img/carte_nc_nem_09-19.png"
+alt="Evolution écart-type 2009-2019" />
+<figcaption aria-hidden="true">Evolution écart-type
+2009-2019</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<figure>
+<img data-src="img/carte_nc_nem_09-14.png"
+alt="Evolution écart-type 2009-2014" />
+<figcaption aria-hidden="true">Evolution écart-type
+2009-2014</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<figure>
+<img data-src="img/carte_nc_nem_14-19.png"
+alt="Evolution écart-type 2014-2019" />
+<figcaption aria-hidden="true">Evolution écart-type
+2014-2019</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<h4
+id="conclusions-sur-les-distributions-et-les-évolutions-du-nem">Conclusions
+sur les distributions et les évolutions du NEM</h4>
+<ul>
+<li>diminution de l’écart-type entre 2009 et 2019
+<ul>
+<li>réductions <strong>importantes</strong> entre 2009 et 2014</li>
+<li><strong>stabilité</strong> entre 2014 et 2019</li>
+<li>identifier une mesure de pertinence statistique pour la comparaison
+d’écarts-types</li>
+</ul></li>
+<li>des différences infra communales importantes
+<ul>
+<li>endogène au territoire ?</li>
+</ul></li>
+</ul>
+</section>
+<section id="distance-à-la-mine" class="slide level3">
+<h3>Distance à la mine</h3>
+<h4 id="matrice-de-desserte">Matrice de desserte</h4>
+<figure>
+<img data-src="img/carte_nc_usine_desserte.png"
+alt="Durée médiance de trajet en minutes à l’usine par IRIS" />
+<figcaption aria-hidden="true">Durée médiance de trajet en minutes à
+l’usine par IRIS</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<h4 id="analyse-desserte-nem">Analyse desserte / NEM</h4>
+<figure>
+<img data-src="img/afc_nem_desserte.png"
+alt="AFC durée d’accès (discrétisée en groupe de 15’ de trajet) et déciles du NEM" />
+<figcaption aria-hidden="true">AFC durée d’accès (discrétisée en groupe
+de 15’ de trajet) et déciles du NEM</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<h4 id="conclusions-sur-la-variable-durée-de-trajet">Conclusions sur la
+variable durée de trajet</h4>
+<ul>
+<li><strong>Absence de linéarité</strong> entre la distance à la mine et
+la variable <code>MINE</code> :
+<ul>
+<li>les actifs de la mine sur-représentés dans <code>[0-30[</code></li>
+<li>puis chutent <em>brutalement</em> dans <code>[45-60[</code></li>
+<li>actifs de la mine sont de moins en moins représentés avec la
+distance croissante.</li>
+</ul></li>
+<li>sur-représentation des Européens/Calédoniens une sous-représentation
+des Kanaks dans <code>[45-60[</code>.</li>
+<li>sur-représentation des cadre dans <code>[15-30[</code>.</li>
+</ul>
+<p>Est-ce que finalement, en excluant le GN, on aurait pas
+essentiellement des résultats sur <strong>l’impact de l’usine Koniambo
+sur VKPP et la province Nord</strong> ?</p>
+</section>
+<section id="modèles-linéaires-pour-le-nem" class="slide level3">
+<h3>Modèles linéaires pour le NEM</h3>
+<p>Comparaison des modèles <code>NEM100 ~ X</code> avec <code>X</code>
+dans</p>
+<ul>
+<li>diplôme, groupe d’age, CSP, variable <code>MINE</code></li>
+<li>1/4h de trajet calculées par IRIS</li>
+</ul>
+<pre class="raw"><code>                       dev dof dev_by_dof  dev_pc
+DUREE_USINE_QUART  2147830   9     238648 14.5211
+DUREE_CENTRE_QUART  993045   8     124131  6.7138
+DUREE_QUART         508703   7      72672  3.4392
+DIPLR_             2047411   7     292487 13.8421
+AGER_               260642   6      43440  1.7621
+CS8_               1844840   5     368968 12.4726
+MINE_                13074   1      13074  0.0884
+ETH                3997596   4     999399 27.0270</code></pre>
+</section>
+<section class="slide level3">
+
+<h4
+id="nem100-usine_quart-dipl-cs8-eth"><code>NEM100 ~ USINE_QUART + DIPL + CS8 + ETH</code></h4>
+<figure>
+<img data-src="img/modele1.png" alt="Coefficients du modèle" />
+<figcaption aria-hidden="true">Coefficients du modèle</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
+<h4
+id="conclusions-sur-le-pouvoir-explicatif-des-facteurs-sur-le-nem100">Conclusions
+sur le pouvoir explicatif des facteurs sur le NEM100</h4>
+<ul>
+<li>des trois durées, c’est celle <strong>à l’usine</strong> qui capture
+le plus de variance</li>
+<li>l’impact est du même ordre de grandeur que le
+<strong>diplôme</strong> ou la <strong>CSP</strong></li>
+<li>mais très inférieur à l’<strong>influence ethnique</strong></li>
+<li>l’age et l’employeur minier on des influences <strong>très
+limitées</strong></li>
+</ul>
 </section>
 </section>
     </div>
