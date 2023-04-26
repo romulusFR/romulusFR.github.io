@@ -1,8 +1,8 @@
 # Retours sur les RPs 2009-2014-2019 ISEE
 
-Rapport (2022-12-27) en ligne :
+[Rapport (2022-12-27)](https://romulusfr.github.io/isee-rp19/etude_nem_2009_2014_2019.html)
 
-<https://romulusfr.github.io/isee-rp19/etude_nem_2009_2014_2019.html>
+[Slides (2023-04-26)](https://romulusfr.github.io/isee-rp19/2023-04-26-talk/talk.html)
 
 ## Introduction
 
@@ -10,15 +10,7 @@ Rapport (2022-12-27) en ligne :
 
 **But** exploiter les données 2019, compléter les analyses 2014 et 2009 sur l'indicateur de _Niveau d'Équipement des Ménages_ (NEM).
 
-#### Données utilisées
-
-- **RP** = recensement de la population 2009, 2014 et 2019 (**BL** = base logements + **BI** = base individuelle)
-- définition géographiques (_shapefile_)
-  - IRIS dits _UNC_
-  - communes et provinces
-- _durées de trajet_ mines/IRIS (a.k.a., _matrice de desserte_)
-
-### Retour sur le workshop du 2022-11-16
+### Retour sur la réunion de travail du 2022-11-16
 
 - Données ISEE 2019, accès aux RPs via OpenData​, SD-Box​, _in situ_ et le Teams `Data​`
 - Retour sur les sessions de travail à l'ISEE du 2022-11-07 et 2022-11-15
@@ -42,22 +34,30 @@ Rapport (2022-12-27) en ligne :
 ---
 
 - 🤔 bâtir un autre indicateur
-  - hors du cadre
+  - non réalisé
 - 😀 analyse des variances du NEM / inégalités
   - analyse de la variance province/commune/VKPP
   - évolutions spatiales / analyses diachronique
 - 😵‍💫 méthodes de _matching_ sur le RP 2019
-  - spécifique à l'économétrie
+  - méthodes non maîtrisées
   - analyse des _degrés de libertés_ de modèles linéaires
 - 🤠 (non prévu) contributions au NEM
-  - comprendre les poids
-  - comparer équipements et cofacteurs
+  - comprendre les poids des équipements
+  - analyser équipements et les autres variables
 
-### Données concernés
+### Données utilisées
 
-- résidences principales
-- ménages **hors** du Grand-Nouméa (GN)
-  - effet très limité sur les évolutions du NEM
+- **RP** = recensement de la population 2009, 2014 et 2019 (**BL** = base logements + **BI** = base individuelle)
+- définition géographiques (_shapefile_)
+  - IRIS dits _UNC_
+  - communes et provinces
+- _durées de trajet_ mines/IRIS (a.k.a., _matrice de desserte_)
+
+---
+
+- ⚠️ résidences **principales**
+- ⚠️ ménages **hors** du Grand-Nouméa (GN)
+  - effet limité sur les évolutions du NEM
   - améliore la qualité des regressions.
 - volumes
   - 2009 : 22090 ménages / 70 variables,
@@ -71,7 +71,9 @@ Rapport (2022-12-27) en ligne :
 
 `NEM` et `NEM100` construits à partir de `ELEC`, `EAU`, `BATI/TYPC14`, `BAIN`, `WC`, `MAL` (ajouté), `REFRI`, `CLIM`, `CHOS`, `TFIXE`, `INTER`, `VOIT` (re-codé), `BATO` (re-codé), `DEROU` (re-codé), ~~`TMOB`~~, ~~`ORDI`~~.
 
-#### Cofacteurs d'analyse
+---
+
+#### Variables d'analyse
 
 - code IRIS (variable `IRISUNC`),
 - commune (variable `NC`)
@@ -112,11 +114,11 @@ Rapport (2022-12-27) en ligne :
 - la méthode _top 5 des axes de l'ACP_ semble avoir un effet limité
   - le re-codage des variables a plus d'impact
 - voir une analyse différenciée par groupe d'équipements
-- les ordres _naturels_ confortent les % d'inertie capturés
+- les ordres totaux sur les _x_ confortent le choix de la méthode
 
 ### Distributions et évolutions du NEM
 
-On veut savoir comment le NEM (base 100) évolue spatialement et temporellement.
+On veut apprécier le `NEM100` spatialement et temporellement.
 
 ---
 
@@ -146,18 +148,18 @@ On veut savoir comment le NEM (base 100) évolue spatialement et temporellement.
 
 #### Conclusions sur les distributions et les évolutions du NEM
 
-- diminution de l'écart-type entre 2009 et 2019
+- **diminution substantielle** de l'écart-type entre 2009 et 2019
   - réductions **importantes** entre 2009 et 2014
   - **stabilité** entre 2014 et 2019
-  - identifier une mesure de pertinence statistique pour la comparaison d'écarts-types
-- des différences infra communales importantes
-  - endogène au territoire ?
+  - identifier une mesure de pertinence statistique pour la comparaison d'écarts-types ?
+- des différences infra communales **importantes**
+  - limite de l'analyse des durées de trajet à la mine
 
 ### Distance à la mine
 
 #### Matrice de desserte
 
-![Durée médiance de trajet en minutes à l'usine par IRIS](img/carte_nc_usine_desserte.png)
+![Durée médiane de trajet en minutes à l'usine par IRIS](img/carte_nc_usine_desserte.png)
 
 ---
 
@@ -199,9 +201,15 @@ ETH                3997596   4     999399 27.0270
 
 ---
 
+#### `NEM100 ~ DIPL + CS8 + ETH`
+
+![Coefficients du modèle **sans** durée de trajet](img/modele1.png)
+
+---
+
 #### `NEM100 ~ USINE_QUART + DIPL + CS8 + ETH`
 
-![Coefficients du modèle](img/modele1.png)
+![Coefficients du modèle **avec** durée de trajet](img/modele2.png)
 
 ---
 
@@ -211,3 +219,4 @@ ETH                3997596   4     999399 27.0270
 - l'impact est du même ordre de grandeur que le **diplôme** ou la **CSP**
 - mais très inférieur à l'**influence ethnique**
 - l'age et l'employeur minier on des influences **très limitées**
+- les coefficient de la durée de trajet ne sont **pas linéaires**

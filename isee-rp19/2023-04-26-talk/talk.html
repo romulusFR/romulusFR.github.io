@@ -43,10 +43,12 @@
 <section id="retours-sur-les-rps-2009-2014-2019-isee"
 class="title-slide slide level1">
 <h1>Retours sur les RPs 2009-2014-2019 ISEE</h1>
-<p>Rapport (2022-12-27) en ligne :</p>
 <p><a
-href="https://romulusfr.github.io/isee-rp19/etude_nem_2009_2014_2019.html"
-class="uri">https://romulusfr.github.io/isee-rp19/etude_nem_2009_2014_2019.html</a></p>
+href="https://romulusfr.github.io/isee-rp19/etude_nem_2009_2014_2019.html">Rapport
+(2022-12-27)</a></p>
+<p><a
+href="https://romulusfr.github.io/isee-rp19/2023-04-26-talk/talk.html">Slides
+(2023-04-26)</a></p>
 </section>
 <section id="introduction" class="title-slide slide level2">
 <h2>Introduction</h2>
@@ -57,22 +59,10 @@ class="uri">https://romulusfr.github.io/isee-rp19/etude_nem_2009_2014_2019.html<
 <p><strong>But</strong> exploiter les données 2019, compléter les
 analyses 2014 et 2009 sur l’indicateur de <em>Niveau d’Équipement des
 Ménages</em> (NEM).</p>
-<h4 id="données-utilisées">Données utilisées</h4>
-<ul>
-<li><strong>RP</strong> = recensement de la population 2009, 2014 et
-2019 (<strong>BL</strong> = base logements + <strong>BI</strong> = base
-individuelle)</li>
-<li>définition géographiques (<em>shapefile</em>)
-<ul>
-<li>IRIS dits <em>UNC</em></li>
-<li>communes et provinces</li>
-</ul></li>
-<li><em>durées de trajet</em> mines/IRIS (a.k.a., <em>matrice de
-desserte</em>)</li>
-</ul>
 </section>
-<section id="retour-sur-le-workshop-du-2022-11-16" class="slide level3">
-<h3>Retour sur le workshop du 2022-11-16</h3>
+<section id="retour-sur-la-réunion-de-travail-du-2022-11-16"
+class="slide level3">
+<h3>Retour sur la réunion de travail du 2022-11-16</h3>
 <ul>
 <li>Données ISEE 2019, accès aux RPs via OpenData​, SD-Box​, <em>in
 situ</em> et le Teams <code>Data​</code></li>
@@ -119,7 +109,7 @@ du NEM</a></li>
 <ul>
 <li>🤔 bâtir un autre indicateur
 <ul>
-<li>hors du cadre</li>
+<li>non réalisé</li>
 </ul></li>
 <li>😀 analyse des variances du NEM / inégalités
 <ul>
@@ -128,23 +118,38 @@ du NEM</a></li>
 </ul></li>
 <li>😵‍💫 méthodes de <em>matching</em> sur le RP 2019
 <ul>
-<li>spécifique à l’économétrie</li>
+<li>méthodes non maîtrisées</li>
 <li>analyse des <em>degrés de libertés</em> de modèles linéaires</li>
 </ul></li>
 <li>🤠 (non prévu) contributions au NEM
 <ul>
-<li>comprendre les poids</li>
-<li>comparer équipements et cofacteurs</li>
+<li>comprendre les poids des équipements</li>
+<li>analyser équipements et les autres variables</li>
 </ul></li>
 </ul>
 </section>
-<section id="données-concernés" class="slide level3">
-<h3>Données concernés</h3>
+<section id="données-utilisées" class="slide level3">
+<h3>Données utilisées</h3>
 <ul>
-<li>résidences principales</li>
-<li>ménages <strong>hors</strong> du Grand-Nouméa (GN)
+<li><strong>RP</strong> = recensement de la population 2009, 2014 et
+2019 (<strong>BL</strong> = base logements + <strong>BI</strong> = base
+individuelle)</li>
+<li>définition géographiques (<em>shapefile</em>)
 <ul>
-<li>effet très limité sur les évolutions du NEM</li>
+<li>IRIS dits <em>UNC</em></li>
+<li>communes et provinces</li>
+</ul></li>
+<li><em>durées de trajet</em> mines/IRIS (a.k.a., <em>matrice de
+desserte</em>)</li>
+</ul>
+</section>
+<section class="slide level3">
+
+<ul>
+<li>⚠️ résidences <strong>principales</strong></li>
+<li>⚠️ ménages <strong>hors</strong> du Grand-Nouméa (GN)
+<ul>
+<li>effet limité sur les évolutions du NEM</li>
 <li>améliore la qualité des regressions.</li>
 </ul></li>
 <li>volumes
@@ -169,7 +174,10 @@ ménages</h4>
 <code>TFIXE</code>, <code>INTER</code>, <code>VOIT</code> (re-codé),
 <code>BATO</code> (re-codé), <code>DEROU</code> (re-codé),
 <del><code>TMOB</code></del>, <del><code>ORDI</code></del>.</p>
-<h4 id="cofacteurs-danalyse">Cofacteurs d’analyse</h4>
+</section>
+<section class="slide level3">
+
+<h4 id="variables-danalyse">Variables d’analyse</h4>
 <ul>
 <li>code IRIS (variable <code>IRISUNC</code>),</li>
 <li>commune (variable <code>NC</code>)</li>
@@ -239,13 +247,13 @@ limité
 <li>le re-codage des variables a plus d’impact</li>
 </ul></li>
 <li>voir une analyse différenciée par groupe d’équipements</li>
-<li>les ordres <em>naturels</em> confortent les % d’inertie
-capturés</li>
+<li>les ordres totaux sur les <em>x</em> confortent le choix de la
+méthode</li>
 </ul>
 </section>
 <section id="distributions-et-évolutions-du-nem" class="slide level3">
 <h3>Distributions et évolutions du NEM</h3>
-<p>On veut savoir comment le NEM (base 100) évolue spatialement et
+<p>On veut apprécier le <code>NEM100</code> spatialement et
 temporellement.</p>
 </section>
 <section class="slide level3">
@@ -301,16 +309,17 @@ alt="Evolution écart-type 2014-2019" />
 id="conclusions-sur-les-distributions-et-les-évolutions-du-nem">Conclusions
 sur les distributions et les évolutions du NEM</h4>
 <ul>
-<li>diminution de l’écart-type entre 2009 et 2019
+<li><strong>diminution substantielle</strong> de l’écart-type entre 2009
+et 2019
 <ul>
 <li>réductions <strong>importantes</strong> entre 2009 et 2014</li>
 <li><strong>stabilité</strong> entre 2014 et 2019</li>
 <li>identifier une mesure de pertinence statistique pour la comparaison
-d’écarts-types</li>
+d’écarts-types ?</li>
 </ul></li>
-<li>des différences infra communales importantes
+<li>des différences infra communales <strong>importantes</strong>
 <ul>
-<li>endogène au territoire ?</li>
+<li>limite de l’analyse des durées de trajet à la mine</li>
 </ul></li>
 </ul>
 </section>
@@ -319,8 +328,8 @@ d’écarts-types</li>
 <h4 id="matrice-de-desserte">Matrice de desserte</h4>
 <figure>
 <img data-src="img/carte_nc_usine_desserte.png"
-alt="Durée médiance de trajet en minutes à l’usine par IRIS" />
-<figcaption aria-hidden="true">Durée médiance de trajet en minutes à
+alt="Durée médiane de trajet en minutes à l’usine par IRIS" />
+<figcaption aria-hidden="true">Durée médiane de trajet en minutes à
 l’usine par IRIS</figcaption>
 </figure>
 </section>
@@ -375,11 +384,23 @@ ETH                3997596   4     999399 27.0270</code></pre>
 </section>
 <section class="slide level3">
 
+<h4 id="nem100-dipl-cs8-eth"><code>NEM100 ~ DIPL + CS8 + ETH</code></h4>
+<figure>
+<img data-src="img/modele1.png"
+alt="Coefficients du modèle sans durée de trajet" />
+<figcaption aria-hidden="true">Coefficients du modèle
+<strong>sans</strong> durée de trajet</figcaption>
+</figure>
+</section>
+<section class="slide level3">
+
 <h4
 id="nem100-usine_quart-dipl-cs8-eth"><code>NEM100 ~ USINE_QUART + DIPL + CS8 + ETH</code></h4>
 <figure>
-<img data-src="img/modele1.png" alt="Coefficients du modèle" />
-<figcaption aria-hidden="true">Coefficients du modèle</figcaption>
+<img data-src="img/modele2.png"
+alt="Coefficients du modèle avec durée de trajet" />
+<figcaption aria-hidden="true">Coefficients du modèle
+<strong>avec</strong> durée de trajet</figcaption>
 </figure>
 </section>
 <section class="slide level3">
@@ -395,6 +416,8 @@ le plus de variance</li>
 <li>mais très inférieur à l’<strong>influence ethnique</strong></li>
 <li>l’age et l’employeur minier on des influences <strong>très
 limitées</strong></li>
+<li>les coefficient de la durée de trajet ne sont <strong>pas
+linéaires</strong></li>
 </ul>
 </section>
 </section>
