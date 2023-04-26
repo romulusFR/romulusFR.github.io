@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS demo;
 -- option TEMPORARY pour une relation éphémère.
 CREATE TEMPORARY TABLE demo(
-  id int,
+  id int PRIMARY KEY,
   name text,
   timestamp timestamp WITH time zone DEFAULT CURRENT_TIMESTAMP(0) -- /!\ toujours une time zone
 );

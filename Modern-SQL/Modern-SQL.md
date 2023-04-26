@@ -7,6 +7,9 @@ Support de présentation pour le [café développeur·se LIRIS : SQL moderne](ht
     - [Jeux de données](#jeux-de-données)
     - [Références](#références)
   - [Extractions de dates et de chaînes](#extractions-de-dates-et-de-chaînes)
+  - [Gestion des modifications](#gestion-des-modifications)
+    - [`RETURNING`](#returning)
+    - [`UPDATE` or `INSERT`](#update-or-insert)
   - [Fonctions de fenêtrage (_windows function_)](#fonctions-de-fenêtrage-windows-function)
     - [Solution traditionnelle](#solution-traditionnelle)
     - [Solution _windows_](#solution-windows)
@@ -60,7 +63,7 @@ Ensuite, avec l'utilisateur `cafe` dans la base `cafe` exécuter les fichiers [d
 - une table `sensor` contenant des données générées aléatoirement,
 - un jeu d'essai _RH_ avec une table `emp` pour les employés et une table `dep` pour la hiérarchie des services.
 
-Le fichier [random_emp_dep.sql](data/random_emp_dep.sql) permettra de générer des employés et des services aléatoirement.
+Le fichier [random_emp_dep.sql](data/random_emp_dep.sql) permet de générer des employés et des services aléatoirement.
 
 ### Références
 
@@ -128,6 +131,48 @@ INSERT INTO demo VALUES
 -- SELECT * FROM demo
 TABLE demo;
 ```
+
+## Gestion des modifications
+
+### `RETURNING`
+
+> The optional `RETURNING` clause causes `INSERT` to compute and return value(s) based on each row actually inserted (or updated, if an ON CONFLICT DO UPDATE clause was used). This is primarily useful for obtaining values that were supplied by defaults, such as a serial sequence number. However, any expression using the table's columns is allowed.
+
+Utilisé notamment sur les `WITH` avec des modifications. La clause est utilisée dans d'autres SGBD mais n'est pas standard.
+
+### `UPDATE` or `INSERT`
+
+L'_upsert_, appelé aussi _`UPDATE` or `INSERT`_ est une opération qui consiste à tenter d'insérer et de faire à défaut une mise-à-jour si le tuple existe déjà en **une seule** commande. Il y a deux façons de le faire en PostgreSQL.
+
+#### Clause `ON CONFLICT`
+
+<https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT>
+
+C'est la solution traditionnelle avant la version 15, elle est presque standard. Elle permet de de spécifier le comportement en cas d'exception levée par un conflit de contrainte de clef primaire ou de contrainte d'unicité.
+
+```sql
+INSERT INTO demo VALUES (0, 'collision', DEFAULT);
+-- ERROR:  23505: duplicate key value violates unique constraint "demo_pkey"
+
+INSERT INTO demo VALUES (0, 'collision', DEFAULT)
+ON CONFLICT (id) DO NOTHING;
+-- INSERT 0 0
+
+INSERT INTO demo VALUES (0, 'collision', DEFAULT)
+ON CONFLICT ON CONSTRAINT demo_pkey DO NOTHING;
+-- INSERT 0 0
+
+INSERT INTO demo VALUES (0, 'collision', DEFAULT)
+ON CONFLICT ON CONSTRAINT demo_pkey DO UPDATE SET
+  name=demo.name,
+  timestamp=EXCLUDED.timestamp;
+-- INSERT 0 1
+```
+
+#### Commande `MERGE`
+
+C'est la clause standard d'_upsert_ supportée depuis la version 15.
+Elle permet des traitements impossible avec `ON CONFLICT` mais n'intègre pas de clause `RETURNING`
 
 ## Fonctions de fenêtrage (_windows function_)
 
