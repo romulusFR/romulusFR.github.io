@@ -14,6 +14,10 @@ PORT=5432
 DATABASE=cafe
 SCHEMA=cafe
 
+Exécuter par exemple
+
+python3 bench.py --verbose ../queries/perf_agg_win_1.sql ../queries/perf_agg_win_2.sql
+
 """
 import argparse
 import asyncio
@@ -23,6 +27,7 @@ import urllib.parse
 from collections import defaultdict
 from itertools import product
 from pathlib import Path
+from pprint import pformat
 from time import perf_counter, time
 from typing import DefaultDict
 
@@ -105,7 +110,29 @@ def do_sync(queries: dict[str, str], repeat):
 
 
 async def do_async(queries: dict[str, str], repeat):
-    """version ASYNC"""
+    """version ASYNC, parallélisation = nb requêtes"""
+    res: DefaultDict[str, list[float]] = defaultdict(list)
+    pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, 20))
+
+    async def async_job(filename, query):
+        async with pool.connection() as aconn: # HERE
+            async with aconn.cursor() as cur:
+                for i in range(repeat):
+                    logger.debug("ASYNChronous query #%i for '%s'", i, filename)
+                    await cur.execute(EXPLAIN + query)
+                    data = await cur.fetchone()
+                return filename, data[0][0]["Execution Time"]
+
+    res_times = await atqdm.gather(*[async_job(f, q) for (f, q) in queries.items()], total=len(queries))
+    for f, t in res_times:
+        res[f].append(t)
+
+    logger.debug(pformat(res))
+    return res
+
+
+async def do_async_product(queries: dict[str, str], repeat):
+    """version ASYNC, parallélisation = nb requêtes * répétitions"""
     res: DefaultDict[str, list[float]] = defaultdict(list)
     pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, 20))
 
