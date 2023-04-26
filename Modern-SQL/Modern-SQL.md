@@ -1,10 +1,12 @@
-# SQL moderne
+# Café développeur·se LIRIS : SQL moderne
 
-- [SQL moderne](#sql-moderne)
+Support de présentation pour le [café développeur·se LIRIS : SQL moderne](https://projet.liris.cnrs.fr/edp/cafes-developpeur-liris/2023-05-11-sql-moderne.html).
+
+- [Café développeur·se LIRIS : SQL moderne](#café-développeurse-liris--sql-moderne)
   - [Introduction](#introduction)
-    - [TODO](#todo)
     - [Jeux de données](#jeux-de-données)
     - [Références](#références)
+  - [Extractions de dates et de chaînes](#extractions-de-dates-et-de-chaînes)
   - [Fonctions de fenêtrage (_windows function_)](#fonctions-de-fenêtrage-windows-function)
     - [Solution traditionnelle](#solution-traditionnelle)
     - [Solution _windows_](#solution-windows)
@@ -29,25 +31,13 @@ Le but de ce café est de montrer des opérateurs SQL des [standards contemporai
 Que ce soit pour leur pouvoir d'expression, pour leur facilité d'utilisation ou pour leurs performance, ces opérateurs facilitent grandement certaines activités.
 Seront notamment abordés :
 
-- la manipulation des dates avec `EXTRACT`,
+- la extractions de dates avec `EXTRACT` et de chaînes,
 - le contrôle des écritures `RETURNING`, `ON CONFLICT` et `MERGE`,
 - les opérateurs pour les requêtes analytiques `WINDOWS`, `GROUPING` et `FILTER`,
 - les `Common Table Expression` avec `WITH` et `WITH RECURSIVE`.
 
 On s'appuiera sur PostgreSQL version 15 pour les exemples.
 On restera _au plus proche du standard SQL_, en remarquant tant que possible ce qui est spécifique à PostgreSQL.
-
-### TODO
-
-Ajouter contenu pour
-
-- clause `RETURNING`
-- clause `ON CONFLICT`
-- clause `MERGE`
-- clause `EXTRACT`
-- clause `GENERATED AS IDENTIY` <https://www.postgresql.org/docs/current/sql-createtable.html>
-- clause `FETCH { FIRST | NEXT } [ count ] { ROW | ROWS } { ONLY | WITH TIES }` <https://www.postgresql.org/docs/current/sql-select.html#SQL-LIMIT>
-- clauses `LIKE, SIMILAR TO, LIKE_REGEX`  et al. <https://www.postgresql.org/docs/current/functions-matching.html>
 
 ### Jeux de données
 
@@ -88,6 +78,8 @@ Documentation officielle PostgreSQL
   - <https://www.postgresql.org/docs/current/tutorial-window.html>
   - <https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS>
   - <https://www.postgresql.org/docs/current/functions-window.html>
+- `GENERATED AS IDENTIY` à la place du type `serial` pour les auto-increments
+  - <https://www.postgresql.org/docs/current/sql-createtable.html>
 - `GROUPING SETS`, `CUBE`, et `ROLLUP` pour les opération _cube_
   - <https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-GROUPING-SETS>
 - `FILTER` clause pour calculer des _pivots_
@@ -100,11 +92,42 @@ Documentation officielle PostgreSQL
   - <https://www.postgresql.org/docs/current/sql-creatematerializedview.html>
 - `WITH [RECURSIVE]` clause, _Common Table Expression_
   - <https://www.postgresql.org/docs/current/queries-with.html>
+- `FETCH { FIRST | NEXT } [ count ] { ROW | ROWS } { ONLY | WITH TIES }` l'équivalent standard de `LIMIT`
+  - <https://www.postgresql.org/docs/current/sql-select.html#SQL-LIMIT>
+- `LIKE, SIMILAR TO, LIKE_REGEX` et autres pour la recherche de sous-chaînes
+  - <https://www.postgresql.org/docs/current/functions-matching.html>
 
 En complément :
 
 - un exposé _Postgres Window Magic_ de Bruce MOMJIAN <https://momjian.us/main/presentations/sql.html> (vidéo et slides)
 - <https://modern-sql.com/> _A lot has changed since SQL-92_ par Markus WINAND.
+
+## Extractions de dates et de chaînes
+
+Les dates et les chaînes de caractères disposent d'opérateurs SQL standardisés.
+On construit l'exemple ci-dessous ([source](./queries/demo_extract_datetime.sql)) avec au passage l'option `TEMPORARY`.
+
+```sql
+DROP TABLE IF EXISTS demo;
+-- option TEMPORARY pour une relation éphémère.
+CREATE TEMPORARY TABLE demo(
+  id int,
+  name text,
+  timestamp timestamp WITH time zone -- /!\ toujours une time zone
+);
+
+INSERT INTO demo VALUES
+  (1, 'toto', '2023-04-25'),
+  (2, 'titi', '2023-04-25T16:03'),
+  (3, 'tutu', '2023-04-25T16:03:45'),
+  (4, 'tata', '2023-04-25T16:03:45.123'),
+  (5, 'tata', '2023-04-25T16:03:45.123456'),
+  (6, 'tete', '2023-04-25T16:03:45.123456+11');
+
+-- extension PostgreSQL, raccourci pour
+-- SELECT * FROM demo
+TABLE demo;
+```
 
 ## Fonctions de fenêtrage (_windows function_)
 
