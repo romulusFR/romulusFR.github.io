@@ -172,7 +172,24 @@ ON CONFLICT ON CONSTRAINT demo_pkey DO UPDATE SET
 #### Commande `MERGE`
 
 C'est la clause standard d'_upsert_ supportée depuis la version 15.
-Elle permet des traitements impossible avec `ON CONFLICT` mais n'intègre pas de clause `RETURNING`
+Elle permet des traitements impossible avec `ON CONFLICT` mais n'intègre pas de clause `RETURNING`.
+
+```sql
+WITH vals(id, name, timestamp) AS(
+    VALUES
+    (42, 'tyty', CURRENT_TIMESTAMP),
+    (43, 'tyty', CURRENT_TIMESTAMP)
+)
+
+MERGE INTO demo USING vals ON demo.id = vals.id
+    WHEN MATCHED THEN UPDATE SET
+        timestamp = vals.timestamp,
+        name = vals.name
+    WHEN NOT MATCHED THEN
+        INSERT VALUES (vals.*)
+;
+```
+
 
 ## Fonctions de fenêtrage (_windows function_)
 

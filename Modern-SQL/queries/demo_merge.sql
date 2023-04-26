@@ -13,8 +13,8 @@ MERGE INTO demo USING vals ON demo.id = vals.id
         timestamp = vals.timestamp,
         name = vals.name
     WHEN NOT MATCHED THEN
-        INSERT (id, name, timestamp) VALUES (vals.*)
-        -- ou 
+        INSERT VALUES (vals.*)
+        -- ou explicitement
         -- INSERT (id, name, timestamp) VALUES (vals.id, vals.name, vals.timestamp)
 ;
 
