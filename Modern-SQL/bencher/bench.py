@@ -52,7 +52,7 @@ def get_parser():
     """Configuration de argparse pour les options de ligne de commandes"""
     parser = argparse.ArgumentParser(
         prog=f"python {Path(__file__).name}",
-        description="Comparaison des performances entre deux requêtes SQL. Préfixe utomatiquement avec une commande EXPLAIN.",  # pylint: disable=line-too-long
+        description="Comparaison des performances entre deux requêtes SQL. Préfixe **automatiquement** avec une commande EXPLAIN.",  # pylint: disable=line-too-long
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -61,7 +61,7 @@ def get_parser():
         "-v",
         action="count",
         default=0,
-        help="niveau de verbosité, -v pour INFO, -vv pour DEBUG. WARNING par défaut",
+        help="verbosité, -v pour 20 (INFO), -vv pour 10 (DEBUG), 30 (WARNING) par défaut.",
     )
 
     parser.add_argument(
@@ -69,8 +69,16 @@ def get_parser():
         "-a",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="active le mode asynchrone de psycog. False par défaut",
+        help="active le mode asynchrone de psycopg, une connection par fichier.",
         dest="with_async",
+    )
+
+    parser.add_argument(
+        "--full",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="active le mode asynchrone entièrement en parallèle, à ajouter à --async, pas d'effet sinon.",
+        dest="full_async",
     )
 
     parser.add_argument(
@@ -100,7 +108,7 @@ def do_sync(queries: dict[str, str], repeat):
     with pool.connection() as conn:
         with conn.cursor() as cur:
             for filename, query in queries.items():
-                for i in tqdm(range(repeat)):
+                for i in tqdm(range(repeat), postfix=filename):
                     logger.debug("SYNChronous query #%i", i)
                     cur.execute(EXPLAIN + query)
                     res_time = cur.fetchone()[0][0]["Execution Time"]  # type: ignore
@@ -115,23 +123,22 @@ async def do_async(queries: dict[str, str], repeat):
     pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, 20))
 
     async def async_job(filename, query):
-        async with pool.connection() as aconn: # HERE
+        async with pool.connection() as aconn:  # HERE
             async with aconn.cursor() as cur:
-                for i in range(repeat):
+                local_times = []
+                for i in atqdm(range(repeat), postfix=filename):
                     logger.debug("ASYNChronous query #%i for '%s'", i, filename)
                     await cur.execute(EXPLAIN + query)
                     data = await cur.fetchone()
-                return filename, data[0][0]["Execution Time"]
+                    local_times.append(data[0][0]["Execution Time"])
+                return filename, local_times
 
-    res_times = await atqdm.gather(*[async_job(f, q) for (f, q) in queries.items()], total=len(queries))
-    for f, t in res_times:
-        res[f].append(t)
-
+    res = await asyncio.gather(*[async_job(f, q) for (f, q) in queries.items()])
     logger.debug(pformat(res))
-    return res
+    return dict(res)
 
 
-async def do_async_product(queries: dict[str, str], repeat):
+async def do_async_full(queries: dict[str, str], repeat):
     """version ASYNC, parallélisation = nb requêtes * répétitions"""
     res: DefaultDict[str, list[float]] = defaultdict(list)
     pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, 20))
@@ -202,12 +209,15 @@ if __name__ == "__main__":
 
     start_time = time()
     if args.with_async:
-        results = asyncio.run(do_async(sql_contents, args.repeat))
+        if args.full_async:
+            results = asyncio.run(do_async_full(sql_contents, args.repeat))
+        else:
+            results = asyncio.run(do_async(sql_contents, args.repeat))
     else:
         results = do_sync(sql_contents, args.repeat)
     end_time = time()
 
-    logger.info("Total running time %.2f", end_time - start_time)
+    logger.info("Total running time %.2f for %i queries", end_time - start_time, len(sql_contents) * args.repeat)
     max_length = max(len(filename) for filename in args.filenames)
     for key, vals in results.items():
         print(
