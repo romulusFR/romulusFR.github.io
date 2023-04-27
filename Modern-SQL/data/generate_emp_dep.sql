@@ -14,10 +14,9 @@ INSERT INTO dep (
         generate_series(0, :dep_size - 1) AS g(i)
 );
 
-INSERT INTO emp (
+INSERT INTO emp(depname, salary) (
     SELECT
         'dep' || (floor(:dep_size * random())) AS depname,
-        i,
         (6000 * random())::int
     FROM
         generate_series(1, :emp_size) AS g(i));

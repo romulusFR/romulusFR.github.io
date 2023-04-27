@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS demo;
 CREATE TEMPORARY TABLE demo(
   id int PRIMARY KEY,
   name text,
-  timestamp timestamp WITH time zone DEFAULT CURRENT_TIMESTAMP(0) -- /!\ toujours une time zone
+  timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP(0) -- /!\ toujours une time zone
 );
 
 INSERT INTO demo VALUES
