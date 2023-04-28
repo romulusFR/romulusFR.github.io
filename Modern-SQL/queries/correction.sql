@@ -1,28 +1,3 @@
--- ? Les opérateurs de regroupement `GROUPING SETS`
--- ? la version simplifiée avec le CUBE
-
-SELECT sensorid AS sensorid, date_trunc('minute', time_stamp)::time AS time_stamp, count(value) AS nb
-FROM sensor
-GROUP BY CUBE(sensorid, date_trunc('minute', time_stamp))
-ORDER BY sensorid NULLS FIRST, time_stamp NULLS FIRST;
-
-
--- ? équivalent du cross join avec lag
--- ? faire la même chose avec `lag` et comparer les plans d'exécution
-
-
-SELECT sensor.*,
-       row_number() OVER win AS rank,
-       value - lag(value) OVER win AS delta
-FROM sensor
-WINDOW win AS (ORDER BY time_stamp ASC)
-ORDER BY time_stamp;
-
---  WindowAgg  (cost=66.83..89.33 rows=1000 width=56)
---    ->  Sort  (cost=66.83..69.33 rows=1000 width=16)
---          Sort Key: time_stamp
---          ->  Seq Scan on sensor  (cost=0.00..17.00 rows=1000 width=16)
-
 --- ? CTE ET WITH
 
 WITH RECURSIVE dep_hierarchy(depname, parent, depth) AS (
@@ -96,5 +71,39 @@ SELECT h.parent, min(emp.salary), max(emp.salary)
 FROM dep_hierarchy AS h JOIN emp ON h.depname = emp.depname
 GROUP BY h.parent
 ORDER BY parent;
+
+
+
+
+---------------------
+-- Q3
+---------------------
+
+SELECT
+    emp.*,
+    first_value(salary) OVER w,
+    last_value(salary) OVER w
+FROM emp
+WINDOW w AS (PARTITION BY depname ORDER BY salary DESC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+ORDER BY
+    depname;
+
+---------------------
+-- Q4
+---------------------
+
+--
+-- le nombre de relevés et la moyenne glissante sur la dernière minute
+SELECT
+    time_stamp,
+    time_stamp - (interval '1 MINUTE'),
+    value,
+    count(*) OVER w,
+    round(avg(value) OVER w, 2) AS moy
+FROM
+    sensor
+WINDOW w AS (ORDER BY time_stamp ASC RANGE BETWEEN '1 MINUTE' PRECEDING AND CURRENT ROW)
+ORDER BY
+    time_stamp;
 
 

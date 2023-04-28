@@ -17,7 +17,7 @@ Support de présentation pour le [café développeur·se LIRIS : SQL moderne](ht
     - [Performance des fonctions de fenêtrage](#performance-des-fonctions-de-fenêtrage)
     - [Clauses `ORDER BY` et `RANGE/ROWS/GROUP` des fenêtres](#clauses-order-by-et-rangerowsgroup-des-fenêtres)
   - [Requêtes analytiques](#requêtes-analytiques)
-    - [Clause `FILTER`](#clause-filter)
+    - [Codage du pivot](#codage-du-pivot)
     - [Les opérateurs de regroupement `GROUPING SETS`](#les-opérateurs-de-regroupement-grouping-sets)
   - [Vues, vues récursives et vues matérialisées](#vues-vues-récursives-et-vues-matérialisées)
     - [Les _Common Table Expression_ (CTE)](#les-common-table-expression-cte)
@@ -245,7 +245,7 @@ ON CONFLICT ON CONSTRAINT demo_pkey DO NOTHING;
 
 INSERT INTO demo VALUES (0, 'collision', DEFAULT)
 ON CONFLICT ON CONSTRAINT demo_pkey DO UPDATE SET
-  name=demo.name,
+  name=EXCLUDED.name,
   timestamp=EXCLUDED.timestamp;
 -- INSERT 0 1
 ```
@@ -621,169 +621,205 @@ Pairwise (Welch) T-tests
 
 ## Requêtes analytiques
 
-On va maintenant prendre des exemples de requêtes statistiques utilisant typiquement une opération `PIVOT` qui n'existe **pas** en SQL. L'exemple employé est celui des [tableaux de contingences](https://en.wikipedia.org/wiki/Contingency_table) qui donne pour deux variables catégorielles les effectifs concernés.
+L'exemple employé est celui des [tableaux de contingences](https://en.wikipedia.org/wiki/Contingency_table) qui donnent pour deux variables catégorielles les effectifs concernés et qui sont très utilisés en statistique.
+On considère pour cela la requête : _pour chaque service, compter le nombre d'employés avec un salaire dans l'intervalle [0,1000), ceux dans [1000,2000) etc._ exprimée comme suit.
 
-### Clause `FILTER`
+### Codage du pivot
 
-La clause `FILTER` permet de mettre une condition (dans le `SELECT`) sur les tuples considérés par un agrégat.
-Cela permet de faire des _pivots_, typiques OLAP, appelés aussi _tableaux croisés_, qui consistent à créer un tableau 2D avec _une colonne_ pour chaque valeur d'un attribut.
-Comme pour le fenêtrage simple, on évite la solution traditionnelle SQL:1992 avec autant de jointures que de colonnes.
+Les _pivots_, typiques OLAP, appelés aussi _tableaux croisés_, consistent à créer un tableau 2D avec _une colonne_ pour chaque valeur d'un attribut comme dans la requête d'exemple. L'opération `PIVOT` n'existe malheureusement **pas** en SQL.
 
-**Requête** : _pour chaque service, compter le nombre d'employés avec un salaire dans l'intervalle [1, 1000[, ceux dans [1000, 2000[ etc._
-
-On peut commencer par la requête préliminaire suivante.
+On crée d'abord une fonction outil [int4slice()](data/int4slice.sql) qui crée un [_range type_](https://www.postgresql.org/docs/current/rangetypes.html) qu'on utilise dans la requête suivante :
 
 ```sql
-SELECT depname, (1000*(salary / 1000))::text || '-' || (1000*(salary / 1000)+1000)::text  AS tranche, count(empno) AS nb
+SELECT depname, int4slice(salary) AS tranche, count(empno) AS nb
 FROM emp
-GROUP BY depname, salary / 1000;
+GROUP BY depname, tranche
+ORDER BY depname, tranche;
 ```
 
 ```raw
-  depname  |  tranche  | nb
------------+-----------+----
- sales     | 5000-6000 |  1
- sales     | 4000-5000 |  3
- personnel | 3000-4000 |  2
- develop   | 5000-6000 |  2
- develop   | 4000-5000 |  2
- develop   | 6000-7000 |  1
-(6 rows)
+  depname  |   tranche   | nb
+-----------+-------------+----
+ develop   | [4000,5000) |  2
+ develop   | [5000,6000) |  2
+ develop   | [6000,7000) |  1
+ personnel | [3000,4000) |  2
+ sales     | [4000,5000) |  3
+ sales     | [5000,6000) |  1
 ```
 
-Elle a toutefois au moins deux problèmes :
+C'est **la base de travail** et dans ce format qu'il faut stocker le résultat le cas échéant.
+Cette représentation _en longueur_ est difficile à interpréter par un humain, on souhaiterait plutôt avoir une représentation à doubles entrées avec **autant de colonnes qu'il y a de tranches salariales**.
 
-- on a pas d'effectif de 0 quand il n'y a aucun employé du service dans la catégorie,
-- on souhaiterait avoir autant de colonnes qu'il y a de tranches salariales, sous forme de _tableau de contingence_ (très utilisé en statistique).
-
-Il faut _pivoter_ ce résultat de requête, comme dans l'illustration ci-dessous, reprise de [modern SQL](https://modern-sql.com/use-case/pivot).
+Pour cela, il faut _pivoter_ ce résultat de requête, comme dans l'illustration ci-dessous, reprise de [modern SQL](https://modern-sql.com/use-case/pivot) pour avoir la forme bi-dimensionnelle souhaitée.
 
 ![Illustration du pivot qui transforme les valeurs d'une colonne en autant de colonnes](img/pivot.png)
 
+#### Clause `FILTER`
+
+La clause `FILTER` permet de mettre une condition sur les tuples considérés par un agrégat dans le `SELECT`.
+Comme pour le fenêtrage simple, on évite la solution traditionnelle SQL:1992 avec autant de jointures que de colonnes.
+On note ici :
+
+- qu'il faut spécifier **statiquement** les colonnes,
+- qu'avec le `count` on aura la valeur 0 dans les cases vides,
+- que le `GROUP BY`ne porte plus **que** sur `depname`.
+
 ```sql
 SELECT  depname,
-        count(empno) FILTER (WHERE salary BETWEEN 3000 and 3999) AS "[3000, 4000[",
-        count(empno) FILTER (WHERE salary BETWEEN 4000 and 4999) AS "[4000, 5000[",
-        count(empno) FILTER (WHERE salary BETWEEN 5000 and 5999) AS "[5000, 6000[",
-        count(empno) FILTER (WHERE salary BETWEEN 6000 and 6999) AS "[6000, 7000[",
-        count(empno) FILTER (WHERE salary >= 7000) AS "[7000, Inf["
+        count(empno) FILTER (WHERE salary BETWEEN 3000 and 3999) AS "[3000,4000)",
+        count(empno) FILTER (WHERE salary BETWEEN 4000 and 4999) AS "[4000,5000)",
+        count(empno) FILTER (WHERE salary BETWEEN 5000 and 5999) AS "[5000,6000)",
+        count(empno) FILTER (WHERE salary BETWEEN 6000 and 6999) AS "[6000,7000)"
+FROM emp
+GROUP BY depname;
+
+-- ou en utilisant les fonctions sur les ranges
+SELECT  depname,
+        count(empno) FILTER (WHERE salary <@ int4slice(3000)) AS "[3000,4000)",
+        count(empno) FILTER (WHERE salary <@ int4slice(4000)) AS "[4000,5000)",
+        count(empno) FILTER (WHERE salary <@ int4slice(5000)) AS "[5000,6000)",
+        count(empno) FILTER (WHERE salary <@ int4slice(6000)) AS "[6000,7000)"
 FROM emp
 GROUP BY depname;
 ```
 
 ```raw
-  depname  | [3000, 4000[ | [4000, 5000[ | [5000, 6000[ | [6000, 7000[ | [7000, Inf[
------------+--------------+--------------+--------------+--------------+-------------
- personnel |            2 |            0 |            0 |            0 |           0
- sales     |            0 |            3 |            1 |            0 |           0
- develop   |            0 |            2 |            2 |            1 |           0
-(3 rows)
+  depname  | [3000,4000) | [4000,5000) | [5000,6000) | [6000,7000)
+-----------+-------------+-------------+-------------+-------------
+ personnel |           2 |           0 |           0 |           0
+ develop   |           0 |           2 |           2 |           1
+ sales     |           0 |           3 |           1 |           0
 ```
 
-On peut aussi utiliser une extension comme [`tablefunc`](https://www.postgresql.org/docs/current/tablefunc.html) qui fait quelque chose de similaire.
-L'extension s'installe par la commande `CREATE EXTENSION tablefunc;`.
+#### Extension PostgreSQL `tablefunc` et commande `\crosstabview`
+
+On peut aussi utiliser une extension comme [`tablefunc`](https://www.postgresql.org/docs/current/tablefunc.html) qui s'installe par la commande `CREATE EXTENSION tablefunc;`.
+
+La fonction `crosstab(source_sql text, category_sql text) → setof record` pivote un résultat de requête : on passe la requête qui fait l'agrégation en premier paramètre et la requête qui génère la liste des colonnes en second.
+Il faut toutefois typer la requête avec la liste des colonnes ce qui limite la le dynamisme de la fonction.
 
 ```sql
-  SELECT *
-    FROM crosstab(
-        'SELECT depname, salary / 1000 AS tranche, count(empno) AS nb FROM emp GROUP BY depname, salary / 1000',
-        'SELECT DISTINCT salary/1000 from emp ORDER by 1'
-    ) AS (depname text, "[3000, 4000[" int, "[4000, 5000[" int, "[5000, 6000[" int, "[6000, 7000[" int);
+SELECT *
+  FROM crosstab(
+      'SELECT
+          depname,
+          int4slice(salary) AS tranche,
+          count(empno) AS nb
+          FROM emp
+          GROUP BY depname, int4slice(salary)
+          ORDER BY depname, int4slice(salary)',
+      'SELECT DISTINCT int4slice(salary) FROM emp ORDER by 1'
+  ) AS (depname text, "[3000,4000)" int, "[4000,5000)" int, "[5000,6000)" int, "[6000,7000)" int)
+;
 ```
 
-Notez les `NULL` au lieu des valeurs `0` de la version avec les `FILTER`.
+Notez les `NULL` représentés ici par `Ø` au lieu des valeurs `0` de la version avec les `FILTER`.
 
 ```bash
-  depname  | [3000, 4000[ | [4000, 5000[ | [5000, 6000[ | [6000, 7000[
------------+--------------+--------------+--------------+--------------
- sales     |            Ø |            3 |            1 |            Ø
- personnel |            2 |            Ø |            Ø |            Ø
- develop   |            Ø |            2 |            2 |            1
-(3 rows)
+  depname  | [3000,4000) | [4000,5000) | [5000,6000) | [6000,7000)
+-----------+-------------+-------------+-------------+-------------
+ develop   |           Ø |           2 |           2 |           1
+ personnel |           2 |           Ø |           Ø |           Ø
+ sales     |           Ø |           3 |           1 |           Ø
 ```
 
 Une des limites de l'approche ici est que la liste des colonnes est _statique_.
-Les SGBD (R)OLAP ont des opérateurs spécifiques pour éviter ceci, mais ici on a une limite du modèle relationnel où les colonnes doivent être connues _avant_ l'exécution de la requête.
+Les SGBDs (R)OLAP ont des opérateurs spécifiques pour éviter ceci, mais ici on a une limite du modèle relationnel où les colonnes doivent être connues _avant_ l'exécution de la requête.
 On peut, pour éviter ceci :
 
-- faire le pivot dans l'application hôte, par exemple avec [DataFrame.pivot_table()](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.pivot_table.html#pandas.DataFrame.pivot_table) si on est en Python;
-- générer la requête programmatiquement, côté serveur ou côté client, avec par exemple un _template_;
-- utiliser une commande spéciale de `psql` comme `\crosstabview` qui pivote le dernier résultat de requête, mais ceci ne fonctionnera **que** pour `psql`.
+- faire le pivot **dans l'application hôte**, par exemple :
+  - [DataFrame.pivot_table()](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.pivot_table.html#pandas.DataFrame.pivot_table) en Python;
+  - [tidyr.pivot_wider()](https://tidyr.tidyverse.org/reference/pivot_wider.html) en R;
+- générer la requête `FILTER` ou `crosstab` programmatiquement avec par exemple un _template_;
+- utiliser la commande `\crosstabview` de `psql` qui pivote _le dernier résultat de requête_, mais ceci ne fonctionnera **que** dans le client `psql`.
+
+La commande `\crosstabview` est très pratique en `psql` mais inutilisable ailleurs.
 
 ```sql
-SELECT  depname, salary / 1000 AS tranche, count(empno) AS nb
+SELECT
+  depname,
+  mk_slice(salary) AS tranche,
+  count(empno) AS nb
 FROM emp
-GROUP BY depname, salary / 1000;
+GROUP BY depname, mk_slice(salary)
+ORDER BY depname, mk_slice(salary);
 
 \crosstabview
 ```
 
 ```raw
-  depname  | 5 | 4 | 3 | 6
------------+---+---+---+---
- sales     | 1 | 3 |   |
- personnel |   |   | 2 |
- develop   | 2 | 2 |   | 1
-(3 rows)
+  depname  | [4000,5000) | [5000,6000) | [6000,7000) | [3000,4000)
+-----------+-------------+-------------+-------------+-------------
+ develop   |           2 |           2 |           1 |
+ personnel |             |             |             |           2
+ sales     |           3 |           1 |             |
 ```
 
 ### Les opérateurs de regroupement `GROUPING SETS`
 
-Ces opérateurs permettent de spécifier plusieurs dimensions sur lesquelles agréger les données selon **toutes ou parties des dimensions**.
-Là aussi, une opération typique (R)OLAP.
-Par exemple, pour les capteurs, on voudrait avoir le nombre de relevés :
+Ces opérateurs permettent de spécifier plusieurs dimensions sur lesquelles agréger les données selon **toutes ou parties des dimensions**, là aussi, une opération typique (R)OLAP.
+Par exemple, pour les capteurs, on voudrait avoir _le nombre de relevés pour chaque heure_ mais avec au surplus :
 
-- pour chaque capteur et pour tous les capteurs;
-- pour chaque minute et pour toutes les dates.
+- pour chaque capteur **et** pour _tous_ les capteurs;
+- pour chaque heure **et** pour _toutes_ les dates.
 
-Si on a $c$ capteur et $d$ dates, on obtient un tableau de de taille $(c+1) \times (d+1)$ avec les _sommes marginales_.
-
-La solution classique consiste à faire l'`UNION` des **quatre agrégats calculés séparément** :
+Si on a $c$ capteur et $d$ heures, on obtient un tableau de de taille $(c+1) \times (d+1)$ avec les _sommes marginales_.
+La solution SQL-92 consisterait à faire l'`UNION` des **quatre agrégats calculés séparément** :
 
 ```sql
-SELECT sensorid AS sensorid, date_trunc('minute', time_stamp) AS time_stamp, count(value) AS nb
+-- chaque capteur / chaque heur
+SELECT sensorid AS sensorid, date_trunc('hour', time_stamp) AS hour, count(value) AS nb
 FROM sensor
-GROUP BY sensorid, date_trunc('minute', time_stamp)
+GROUP BY sensorid, hour
 
 UNION
 
-SELECT NULL, date_trunc('minute', time_stamp), count(value)
+-- tous les capteurs / chaque heur
+SELECT NULL, date_trunc('hour', time_stamp) AS hour, count(value)
 FROM sensor
-GROUP BY date_trunc('minute', time_stamp)
+GROUP BY hour
 
 UNION
 
-SELECT sensorid AS sensorid, NULL AS time_stamp, count(value)
+-- chaque capteur / tous les temps
+SELECT sensorid AS sensorid, NULL AS hour, count(value)
 FROM sensor
 GROUP BY sensorid
 
 UNION
 
-SELECT NULL AS sensorid, NULL AS time_stamp, count(value) AS nb
+-- tous les capteurs / tous les temps
+SELECT NULL AS sensorid, NULL AS hour, count(value) AS nb
 FROM sensor
-ORDER BY sensorid NULLS FIRST, time_stamp NULLS FIRST;
+ORDER BY sensorid NULLS FIRST, hour NULLS FIRST;
 ```
 
-**TODO** le faire en utilisant les `GROUPING SET`, ici l'opérateur `CUBE` en particulier
+On voit bien l'horreur que constitue cette requête.
+Avec les opérateurs `GROUPING SET`, ici l'opérateur `CUBE` en particulier, on va pouvoir **spécifier simultanément plusieurs niveaux d'agrégation**.
+On pourra compléter avec `\crosstabview` pour avoir une représentation en 2D.
 
-**TODO** utiliser enfin `\crosstabview` pour avoir une représentation en 2D comme suit
+```sql
+SELECT
+    sensorid AS sensorid,
+    date_trunc('hour', time_stamp) AS hour,
+    count(value) AS nb
+FROM sensor
+GROUP BY CUBE(sensorid, hour)
+ORDER BY sensorid NULLS FIRST, hour NULLS FIRST;
+```
+
+Au niveau des performance, il ne faut pas espérer de gains, c'est surtout la simplification de l'écriture et la suppression des copies de code qu'on espère.
 
 ```raw
- sensorid |  Ø   | 14:26:00 | 14:27:00 | 14:28:00 | 14:29:00 | 14:30:00 | 14:31:00 | 14:32:00 | 14:33:00 | 14:34:00 | 14:35:00 | 14:36:00 | 14:37:00 | 14:38:00 | 14:39:00 | 14:40:00 | 14:41:00 | 14:42:00
-----------+------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------
-        Ø | 1000 |       58 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       60 |       42
-        0 |   58 |        6 |        2 |        5 |        4 |        4 |        3 |        4 |        1 |        6 |        4 |        2 |        4 |        2 |        3 |        2 |        2 |        4
-        1 |  115 |        7 |        6 |        9 |       13 |        7 |        8 |        6 |        6 |        8 |        4 |        8 |        7 |        3 |        9 |        7 |        3 |        4
-        2 |   87 |        4 |       10 |        5 |        6 |       10 |        4 |        4 |        6 |        1 |        5 |        5 |        8 |        4 |        5 |        5 |        1 |        4
-        3 |   91 |        6 |        6 |        5 |          |        6 |        6 |        8 |        4 |        4 |        5 |        7 |        7 |        8 |        4 |        5 |        4 |        6
-        4 |   90 |        2 |        9 |        6 |        1 |        7 |        8 |        6 |        2 |        3 |        6 |        7 |        9 |        2 |        7 |        4 |        6 |        5
-        5 |   99 |        9 |        3 |        4 |       10 |        4 |        4 |        4 |        6 |        8 |       10 |        7 |        4 |        8 |        5 |        5 |        6 |        2
-        6 |   98 |        5 |        8 |        2 |        5 |        3 |        6 |        5 |        6 |        6 |        5 |        6 |        7 |        6 |        5 |        9 |        8 |        6
-        7 |  101 |        4 |        3 |        6 |        5 |       10 |        5 |        6 |        9 |        6 |        8 |        7 |        3 |        7 |        6 |        6 |        5 |        5
-        8 |  101 |        4 |        5 |        5 |        6 |        5 |        7 |        5 |        6 |        7 |        2 |        3 |        5 |        6 |        8 |        8 |       16 |        3
-        9 |  117 |        8 |        6 |       10 |        8 |        3 |        7 |       11 |        7 |        7 |        9 |        6 |        5 |        8 |        5 |        8 |        6 |        3
-       10 |   43 |        3 |        2 |        3 |        2 |        1 |        2 |        1 |        7 |        4 |        2 |        2 |        1 |        6 |        3 |        1 |        3 |
-(12 rows)
+python3 bench.py --repeat 100 -v ../queries/cube_grouping.sql ../queries/cube_union.sql
+
+INFO:PERF:Total running time 23.49 for 200 queries
+Statistics for each file
+../queries/cube_grouping.sql mean = 113.09 ms, stdev = 17.28 ms, median = 107.05 ms
+../queries/cube_union.sql    mean = 119.02 ms, stdev = 16.34 ms, median = 115.26 ms
+Pairwise (Welch) T-tests
+../queries/cube_grouping.sql < ../queries/cube_union.sql   : pvalue = 0.68% (**) (!= 1.35%)
 ```
 
 ## Vues, vues récursives et vues matérialisées

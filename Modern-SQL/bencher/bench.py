@@ -278,9 +278,9 @@ def main():
 if __name__ == "__main__":
     the_results = main()
 
-    import pandas
-    import seaborn as sns
-    the_df = pandas.DataFrame({Path(k).stem: vals for k, vals in the_results.items()})
-    the_boxplot = sns.boxplot(the_df)
-    the_fig_filename = f"{'-'.join(Path(k).stem for k in the_df.columns)}.png"
-    the_boxplot.figure.savefig(the_fig_filename, dpi=300)
+    # import pandas
+    # import seaborn as sns
+    # the_df = pandas.DataFrame({Path(k).stem: vals for k, vals in the_results.items()})
+    # the_boxplot = sns.boxplot(the_df)
+    # the_fig_filename = f"{'-'.join(Path(k).stem for k in the_df.columns)}.png"
+    # the_boxplot.figure.savefig(the_fig_filename, dpi=300)
