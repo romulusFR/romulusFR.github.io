@@ -409,11 +409,10 @@ Avec la fonction de fenêtrage, le plan est débarrassé de la jointure, le plan
                ->  Seq Scan on emp  (cost=0.00..1541.00 rows=100000 width=14)
 ```
 
-
 Si on force la matérialisation de la sous-requêtes `WITH` comme dans [agg_group_by_materialized.sql](queries/agg_group_by_materialized.sql), le plan est encore différent :
 
 ```raw
-                                   QUERY PLAN                                   
+                                   QUERY PLAN
 --------------------------------------------------------------------------------
  Sort  (cost=17920.02..18170.02 rows=100000 width=46)
    Sort Key: emp.depname, emp.empno
@@ -431,18 +430,20 @@ Si on force la matérialisation de la sous-requêtes `WITH` comme dans [agg_grou
 Sur 100 exécutions, on obtient les statistiques suivantes où les fonctions de fenêtrage sont compétitives.
 
 ```raw
-python3 bench.py --repeat 100 --verbose ../queries/agg_windows.sql ../queries/agg_group_by.sql ../queries/agg_group_by_materialized.sql
+python3 bench.py --repeat 100 --verbose ../queries/agg_windows.sql ../queries/agg_group_by.sql ../queries/agg_group_by_mat.sql
 
-INFO:PERF:Total running time 88.02 for 300 queries
+INFO:PERF:Total running time 97.93 for 300 queries
 Statistics for each file
-../queries/agg_windows.sql               mean = 286.59 ms, stdev = 29.51 ms, median = 278.40 ms
-../queries/agg_group_by.sql              mean = 317.46 ms, stdev = 18.05 ms, median = 314.63 ms
-../queries/agg_group_by_materialized.sql mean = 272.78 ms, stdev = 24.24 ms, median = 268.75 ms
+../queries/agg_windows.sql      mean = 282.39 ms, stdev = 32.11 ms, median = 274.72 ms
+../queries/agg_group_by.sql     mean = 390.85 ms, stdev = 63.58 ms, median = 372.51 ms
+../queries/agg_group_by_mat.sql mean = 302.13 ms, stdev = 58.74 ms, median = 276.95 ms
 Pairwise (Welch) T-tests
-../queries/agg_windows.sql               VS ../queries/agg_group_by.sql             : pvalue = 0.00% (****)
-../queries/agg_windows.sql               VS ../queries/agg_group_by_materialized.sql: pvalue = 0.04% (***)
-../queries/agg_group_by.sql              VS ../queries/agg_group_by_materialized.sql: pvalue = 0.00% (****)
+../queries/agg_windows.sql      < ../queries/agg_group_by.sql    : pvalue = 0.00% (****) (!= 0.00%)
+../queries/agg_windows.sql      < ../queries/agg_group_by_mat.sql: pvalue = 0.18% (**) (!= 0.37%)
+../queries/agg_group_by_mat.sql < ../queries/agg_group_by.sql    : pvalue = 0.00% (****) (!= 0.00%)
 ```
+
+![Comparaison des requêtes de calcul d'écart des salaires à la moyenne de son équipe](img/agg_windows-agg_group_by-agg_group_by_mat.png)
 
 ### Clauses `ORDER BY` et `RANGE/ROWS/GROUP` des fenêtres
 
@@ -608,13 +609,15 @@ La différence empirique de performance est sans surprise **substantielle** avec
 ```raw
 python3 bench.py --repeat 100 --verbose ../queries/lag_lateral.sql ../queries/lag_window.sql
 
-INFO:PERF:Total running time 52.41 for 200 queries
+INFO:PERF:Total running time 51.42 for 200 queries
 Statistics for each file
-../queries/lag_lateral.sql mean = 412.21 ms, stdev = 37.60 ms, median = 401.62 ms
-../queries/lag_window.sql  mean = 109.21 ms, stdev = 14.88 ms, median = 104.46 ms
+../queries/lag_lateral.sql mean = 412.36 ms, stdev = 50.19 ms, median = 393.94 ms
+../queries/lag_window.sql  mean = 99.42 ms, stdev = 7.39 ms, median = 98.45 ms
 Pairwise (Welch) T-tests
-../queries/lag_lateral.sql VS ../queries/lag_window.sql : pvalue = 0.00% (****)
+../queries/lag_window.sql  < ../queries/lag_lateral.sql: pvalue = 0.00% (****) (!= 0.00%)
 ```
+
+![Comparaison des requêtes de calcul du delta entre deux temps consécutifs](img/lag_lateral-lag_window.png)
 
 ## Requêtes analytiques
 

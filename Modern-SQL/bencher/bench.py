@@ -37,7 +37,7 @@ from typing import DefaultDict
 import psycopg
 from dotenv import dotenv_values
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
-from scipy.stats import chisquare, ttest_ind
+from scipy.stats import chisquare, ttest_ind, median_test
 from tqdm import tqdm
 from tqdm.asyncio import tqdm as atqdm
 
@@ -169,8 +169,9 @@ async def do_async_full(queries: dict[str, str], repeat):
     res_times = await atqdm.gather(
         *[async_job(f, q, i) for (f, q), i in product(queries.items(), range(repeat))], total=len(queries) * repeat
     )
-    for f, t in res_times:
-        res[f].append(t)
+    for filename, times in res_times:
+        res[filename].append(times)
+
     return res
 
 
@@ -201,28 +202,29 @@ def pretty_pvalue(pvalue):
     """Pretty printing of significativity"""
     if pvalue <= 1e-4:
         return "****"
-    elif pvalue <= 1e-3:
+    if pvalue <= 1e-3:
         return "***"
-    elif pvalue <= 1e-2:
+    if pvalue <= 1e-2:
         return "**"
-    elif pvalue <= 5e-2:
+    if pvalue <= 5e-2:
         return "*"
     return "NS"
 
 
 # %%
 
-if __name__ == "__main__":
+
+def main():
+    """Entry point"""
     args = get_parser().parse_args()
+    debug_level = logging.WARNING
 
     if args.verbose == 1:
-        DEBUG_LEVEL = logging.INFO
-    elif args.verbose >= 2:
-        DEBUG_LEVEL = logging.DEBUG
-    else:
-        DEBUG_LEVEL = logging.WARNING
+        debug_level = logging.INFO
+    if args.verbose >= 2:
+        debug_level = logging.DEBUG
 
-    logging.basicConfig(level=DEBUG_LEVEL)
+    logging.basicConfig(level=debug_level)
     logger.debug(vars(args))
     logger.debug(CONN_PARAMS)
     logger.debug(f"psycopg: {psycopg.__version__}, libpq: {psycopg.pq.version()}")
@@ -233,9 +235,9 @@ if __name__ == "__main__":
     logger.info("Launching %i times each query (async=%s)", args.repeat, args.with_async)
 
     sql_contents = dict(read_sql_files(args.filenames))
-    if DEBUG_LEVEL >= logging.DEBUG:
-        for k, v in sql_contents.items():
-            logger.debug("file %s\n%s", k, v)
+    if debug_level >= logging.DEBUG:
+        for key, content in sql_contents.items():
+            logger.debug("file %s\n%s", key, content)
 
     start_time = time()
     if args.with_async:
@@ -253,10 +255,32 @@ if __name__ == "__main__":
     max_length = max(len(filename) for filename in args.filenames)
     for key, vals in results.items():
         print(f"{key:<{max_length}} {summary_stats(vals)}")
+        logger.debug(pformat(vals))
 
-    if (len(results) > 1):
+    if len(results) > 1:
         print("Pairwise (Welch) T-tests")
     for (n_a, v_a), (n_b, v_b) in combinations(results.items(), 2):
-        pval = ttest_ind(v_a, v_b, equal_var=False).pvalue
         m_a, m_b = stat.mean(v_a), stat.mean(v_b)
-        print(f"{n_a:<{max_length}} VS {n_b:<{max_length}}: pvalue = {pval:.2%} ({pretty_pvalue(pval)})")
+        # reorder if needed
+        if m_b < m_a:
+            (n_a, v_a), (n_b, v_b) = (n_b, v_b), (n_a, v_a)
+            m_a, m_b = m_b, m_a
+        pval_less = ttest_ind(v_a, v_b, equal_var=False, alternative="less").pvalue
+        pval_diff = ttest_ind(v_a, v_b, equal_var=False, alternative="two-sided").pvalue
+
+        print(
+            f"{n_a:<{max_length}} < {n_b:<{max_length}}: pvalue = {pval_less:.2%} ({pretty_pvalue(pval_less)}) (!= {pval_diff:.2%})"
+        )
+
+    return results
+
+
+if __name__ == "__main__":
+    the_results = main()
+
+    import pandas
+    import seaborn as sns
+    the_df = pandas.DataFrame({Path(k).stem: vals for k, vals in the_results.items()})
+    the_boxplot = sns.boxplot(the_df)
+    the_fig_filename = f"{'-'.join(Path(k).stem for k in the_df.columns)}.png"
+    the_boxplot.figure.savefig(the_fig_filename, dpi=300)
