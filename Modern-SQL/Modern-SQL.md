@@ -63,6 +63,8 @@ Les fichiers suivants, à exécuter avec l'utilisateur `cafe` dans la base `cafe
   - [generate_emp_dep.sql](data/generate_emp_dep.sql) : génère 100.000 employés **et** 1000 services (sans hiérarchie).
 - [db_sensor.sql](data/db_sensor.sql) : une table `sensor` contenant des données générées aléatoirement.
 
+Un programme Python de comparaison de performance de requêtes [bench.py](bencher/bench.py) est fourni.
+
 ### Références
 
 Documentation officielle PostgreSQL
@@ -311,7 +313,7 @@ ORDER BY depname, empno;
 (11 rows)
 ```
 
-La même version avec `WITH` (on viendra sur cet opérateur), préférée personnellement car le rend la sous-requête plus lisible mais qui a **exactement le même plan d'exécution** (et donc le même résultat), voir [perf_agg_group_by.sql](queries/agg_group_by.sql) :
+La même version avec `WITH` (on viendra sur cet opérateur), préférée personnellement car le rend la sous-requête plus lisible mais qui a **exactement le même plan d'exécution** (et donc le même résultat), voir [agg_group_by.sql](queries/agg_group_by.sql) :
 
 ```sql
 WITH sal AS(
@@ -319,7 +321,7 @@ WITH sal AS(
     FROM emp GROUP BY depname
 )
 
--- la jointure entre emp et l'agrégat
+-- join emp/dep
 SELECT emp.*, round(salary - sal.avg) AS delta
 FROM emp JOIN sal
     ON emp.depname = sal.depname
@@ -377,58 +379,75 @@ On va comparer la solution traditionnelle SQL:1992 avec celle avec le fenêtrage
 Pour la solution traditionnelle avec `GROUP BY` et `JOIN`, on obtient le plan suivant où la jointure est très efficace (un seul tuple par `depname` dans la sous-requête `q`)
 
 ```raw
-                                                                   QUERY PLAN
-------------------------------------------------------------------------------------------------------------------------------------------------
- Sort  (cost=14737.38..14987.38 rows=100000 width=46) (actual time=339.916..361.076 rows=100000 loops=1)
+                                           QUERY PLAN
+------------------------------------------------------------------------------------------------
+ Sort  (cost=14737.38..14987.38 rows=100000 width=46)
    Sort Key: emp.depname, emp.empno
-   Sort Method: external merge  Disk: 3040kB
-   ->  Hash Join  (cost=2076.00..4630.61 rows=100000 width=46) (actual time=46.923..113.996 rows=100000 loops=1)
+   ->  Hash Join  (cost=2076.00..4630.61 rows=100000 width=46)
          Hash Cond: (emp.depname = sal.depname)
-         ->  Seq Scan on emp  (cost=0.00..1541.00 rows=100000 width=14) (actual time=0.010..8.001 rows=100000 loops=1)
-         ->  Hash  (cost=2063.50..2063.50 rows=1000 width=38) (actual time=46.903..46.905 rows=1000 loops=1)
-               Buckets: 1024  Batches: 1  Memory Usage: 59kB
-               ->  Subquery Scan on sal  (cost=2041.00..2063.50 rows=1000 width=38) (actual time=45.799..46.630 rows=1000 loops=1)
-                     ->  HashAggregate  (cost=2041.00..2053.50 rows=1000 width=38) (actual time=45.798..46.481 rows=1000 loops=1)
+         ->  Seq Scan on emp  (cost=0.00..1541.00 rows=100000 width=14)
+         ->  Hash  (cost=2063.50..2063.50 rows=1000 width=38)
+               ->  Subquery Scan on sal  (cost=2041.00..2063.50 rows=1000 width=38)
+                     ->  HashAggregate  (cost=2041.00..2053.50 rows=1000 width=38)
                            Group Key: emp_1.depname
-                           Batches: 1  Memory Usage: 321kB
-                           ->  Seq Scan on emp emp_1  (cost=0.00..1541.00 rows=100000 width=10) (actual time=0.002..10.228 rows=100000 loops=1)
- Planning Time: 0.214 ms
- Execution Time: 364.585 ms
+                           ->  Seq Scan on emp emp_1  (cost=0.00..1541.00 rows=100000 width=10)
+(10 rows)
+
 ```
 
 Avec la fonction de fenêtrage, le plan est débarrassé de la jointure, le plan est le suivant.
 
 ```raw
-                                                      QUERY PLAN
------------------------------------------------------------------------------------------------------------------------
- Incremental Sort  (cost=10856.19..20164.88 rows=100000 width=46) (actual time=243.264..366.854 rows=100000 loops=1)
+                                  QUERY PLAN
+------------------------------------------------------------------------------
+ Incremental Sort  (cost=10856.19..20164.88 rows=100000 width=46)
    Sort Key: depname, empno
    Presorted Key: depname
-   Full-sort Groups: 1000  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB
-   Pre-sorted Groups: 1000  Sort Method: quicksort  Average Memory: 32kB  Peak Memory: 32kB
-   ->  WindowAgg  (cost=10848.27..13348.27 rows=100000 width=46) (actual time=243.109..314.612 rows=100000 loops=1)
-         ->  Sort  (cost=10848.27..11098.27 rows=100000 width=14) (actual time=243.046..257.467 rows=100000 loops=1)
+   ->  WindowAgg  (cost=10848.27..13348.27 rows=100000 width=46)
+         ->  Sort  (cost=10848.27..11098.27 rows=100000 width=14)
                Sort Key: depname
-               Sort Method: external merge  Disk: 2568kB
-               ->  Seq Scan on emp  (cost=0.00..1541.00 rows=100000 width=14) (actual time=0.009..11.787 rows=100000 loops=1)
- Planning Time: 0.106 ms
- Execution Time: 369.971 ms
+               ->  Seq Scan on emp  (cost=0.00..1541.00 rows=100000 width=14)
 ```
 
-Un programme Python de comparaison de performance de requêtes [bench.py](bencher/bench.py) est fourni.
-Sur 100 exécutions, on obtient les statistiques suivantes, légèrement en faveur des fonctions de fenêtrage sur ce cas.
+
+Si on force la matérialisation de la sous-requêtes `WITH` comme dans [agg_group_by_materialized.sql](queries/agg_group_by_materialized.sql), le plan est encore différent :
 
 ```raw
-python3 bench.py --repeat 100 --verbose ../queries/agg_windows.sql ../queries/agg_group_by.sql
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Sort  (cost=17920.02..18170.02 rows=100000 width=46)
+   Sort Key: emp.depname, emp.empno
+   CTE sal
+     ->  HashAggregate  (cost=2041.00..2053.50 rows=1000 width=38)
+           Group Key: emp_1.depname
+           ->  Seq Scan on emp emp_1  (cost=0.00..1541.00 rows=100000 width=10)
+   ->  Hash Join  (cost=3280.00..5759.75 rows=100000 width=46)
+         Hash Cond: (sal.depname = emp.depname)
+         ->  CTE Scan on sal  (cost=0.00..20.00 rows=1000 width=64)
+         ->  Hash  (cost=1541.00..1541.00 rows=100000 width=14)
+               ->  Seq Scan on emp  (cost=0.00..1541.00 rows=100000 width=14)
+```
 
-INFO:PERF:Total running time 59.73 for 200 queries
-../queries/agg_windows.sql  mean = 284.05 ms, stdev = 28.91 ms, median = 272.32 ms
-../queries/agg_group_by.sql mean = 310.81 ms, stdev = 15.80 ms, median = 307.89 ms
+Sur 100 exécutions, on obtient les statistiques suivantes où les fonctions de fenêtrage sont compétitives.
+
+```raw
+python3 bench.py --repeat 100 --verbose ../queries/agg_windows.sql ../queries/agg_group_by.sql ../queries/agg_group_by_materialized.sql
+
+INFO:PERF:Total running time 88.02 for 300 queries
+Statistics for each file
+../queries/agg_windows.sql               mean = 286.59 ms, stdev = 29.51 ms, median = 278.40 ms
+../queries/agg_group_by.sql              mean = 317.46 ms, stdev = 18.05 ms, median = 314.63 ms
+../queries/agg_group_by_materialized.sql mean = 272.78 ms, stdev = 24.24 ms, median = 268.75 ms
+Pairwise (Welch) T-tests
+../queries/agg_windows.sql               VS ../queries/agg_group_by.sql             : pvalue = 0.00% (****)
+../queries/agg_windows.sql               VS ../queries/agg_group_by_materialized.sql: pvalue = 0.04% (***)
+../queries/agg_group_by.sql              VS ../queries/agg_group_by_materialized.sql: pvalue = 0.00% (****)
 ```
 
 ### Clauses `ORDER BY` et `RANGE/ROWS/GROUP` des fenêtres
 
-La syntaxe complète des `WINDOWS` est très riche. On peut définir la partition et l'ordre de tri au sein de la partition, ici [la syntaxe générale](https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS), l'ordre est nécessaire pour certaines fonctions comme `rank()` ou `dense_rank()`
+La syntaxe complète des `WINDOWS` est [très riche](https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS). On peut définir la partition avec `PARTITION BY` mais aussi l'ordre de tri au sein de la partition avec `ORDER BY` et la _largeur_ de la fenêtre au sein de la partition avec `{} RANGE | ROWS | GROUPS }`.
+L'ordre est nécessaire pour certaines fonctions comme `rank()` ou `dense_rank()`
 
 ```raw
 [ existing_window_name ]
@@ -438,9 +457,9 @@ La syntaxe complète des `WINDOWS` est très riche. On peut définir la partitio
 ```
 
 Au sein de la fenêtre, c'est-à-dire le sous-ensemble des tuples de la partition pris en compte pour le calcul, on peut utiliser des fonctions qui permettent de référencer les tuples précédents comme `lag()`.
-Un exemple typique est celui des requêtes où l'on calcule un sous-total courant ou delta avec la ligne précédente.
+Un exemple typique est celui des requêtes où l'on calcule un _sous-total courant ou un delta_ avec la ligne précédente.
 
-Par exemple, la requête sur la table `sensor` qui calcule _pour chaque capteur, le temps en seconde entre deux relevés consécutifs_ utilise la fonction `lag()` et soustraction de dates.
+Par exemple, la requête sur la table `sensor` qui calcule _pour chaque capteur, le temps en seconde entre deux relevés consécutifs_ en utilisa,t la fonction `lag()` et soustraction de dates.
 Quand la définition de la fenêtre est longue ou employée sur plusieurs attributs, on peut la définir avec la clause `WINDOWS` et la réemployer comme suit.
 
 ```sql
@@ -540,7 +559,7 @@ FROM ordered_sensor AS s1 CROSS JOIN LATERAL (
 ;
 ```
 
-On obtient le plan suivant :
+On obtient le plan suivant. Pour complétude, on va donner une version n'utilisant pas de `JOIN LATERAL` et s'appuyant sur un produit cartésien et un `GROUP NY` mais elle donnera ici _le même plan_, voir [lag_group_by.sql](queries/lag_group_by.sql).
 
 ```raw
                                          QUERY PLAN
@@ -561,7 +580,7 @@ On obtient le plan suivant :
                ->  CTE Scan on ordered_sensor s2  (cost=0.00..2000.02 rows=100001 width=40)
 ```
 
-On va faire la même chose avec la _window function_ `lag`, comparer les plans d'exécution et évaluer la performance empirique avec [bench.py](bencher/bench.py). Notons qu'on a pas tout à fait le même résultat de requête : le premier tuples est perdu avec la solution `JOIN LATERAL`. La requête est comme suit :
+On va faire la même chose avec la _window function_ `lag`, comparer les plans d'exécution et évaluer la performance empirique avec [bench.py](bencher/bench.py). Notons qu'on a pas tout à fait le même résultat de requête : le premier tuple est perdu avec la solution `JOIN LATERAL`. La requête est comme suit :
 
 ```sql
 SELECT
@@ -584,14 +603,17 @@ Son plan est particulièrement efficace : il suffit simplement de trier `sensor`
          ->  Seq Scan on sensor  (cost=0.00..1637.01 rows=100001 width=16)
 ```
 
-La différence empirique de performance est sans surprise **substantielle**.
+La différence empirique de performance est sans surprise **substantielle** avec un facteur 4.
 
 ```raw
 python3 bench.py --repeat 100 --verbose ../queries/lag_lateral.sql ../queries/lag_window.sql
 
-INFO:PERF:Total running time 55.74 for 200 queries
-../queries/lag_lateral.sql mean = 443.26 ms, stdev = 85.21 ms, median = 405.89 ms
-../queries/lag_window.sql  mean = 111.53 ms, stdev = 17.48 ms, median = 104.29 ms
+INFO:PERF:Total running time 52.41 for 200 queries
+Statistics for each file
+../queries/lag_lateral.sql mean = 412.21 ms, stdev = 37.60 ms, median = 401.62 ms
+../queries/lag_window.sql  mean = 109.21 ms, stdev = 14.88 ms, median = 104.46 ms
+Pairwise (Welch) T-tests
+../queries/lag_lateral.sql VS ../queries/lag_window.sql : pvalue = 0.00% (****)
 ```
 
 ## Requêtes analytiques

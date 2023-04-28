@@ -19,13 +19,16 @@ Exécuter par exemple
 python3 bench.py --verbose ../queries/perf_agg_win_1.sql ../queries/perf_agg_win_2.sql
 
 """
+
+# %%
+
 import argparse
 import asyncio
 import logging
 import statistics as stat
 import urllib.parse
 from collections import defaultdict
-from itertools import product
+from itertools import product, combinations
 from pathlib import Path
 from pprint import pformat
 from time import perf_counter, time
@@ -34,6 +37,7 @@ from typing import DefaultDict
 import psycopg
 from dotenv import dotenv_values
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
+from scipy.stats import chisquare, ttest_ind
 from tqdm import tqdm
 from tqdm.asyncio import tqdm as atqdm
 
@@ -182,6 +186,32 @@ def read_sql_files(filenames):
             yield filename, file.read()
 
 
+def summary_stats(vals):
+    """statistical summary"""
+    _mean = stat.mean(vals)
+    _stdev = stat.stdev(vals)
+    _median = stat.median(vals)
+    # _pvalue = chisquare(vals).pvalue
+
+    # return f"mean = {_mean:.2f} ms, stdev = {_stdev:.2f} ms, median = {_median:.2f} ms, pvalue = {_pvalue:.2f}"
+    return f"mean = {_mean:.2f} ms, stdev = {_stdev:.2f} ms, median = {_median:.2f} ms"
+
+
+def pretty_pvalue(pvalue):
+    """Pretty printing of significativity"""
+    if pvalue <= 1e-4:
+        return "****"
+    elif pvalue <= 1e-3:
+        return "***"
+    elif pvalue <= 1e-2:
+        return "**"
+    elif pvalue <= 5e-2:
+        return "*"
+    return "NS"
+
+
+# %%
+
 if __name__ == "__main__":
     args = get_parser().parse_args()
 
@@ -218,8 +248,15 @@ if __name__ == "__main__":
     end_time = time()
 
     logger.info("Total running time %.2f for %i queries", end_time - start_time, len(sql_contents) * args.repeat)
+
+    print("Statistics for each file")
     max_length = max(len(filename) for filename in args.filenames)
     for key, vals in results.items():
-        print(
-            f"{key:<{max_length}} mean = {stat.mean(vals):.2f} ms, stdev = {stat.stdev(vals):.2f} ms, median = {stat.median(vals):.2f} ms"  # pylint: disable=line-too-long
-        )
+        print(f"{key:<{max_length}} {summary_stats(vals)}")
+
+    if (len(results) > 1):
+        print("Pairwise (Welch) T-tests")
+    for (n_a, v_a), (n_b, v_b) in combinations(results.items(), 2):
+        pval = ttest_ind(v_a, v_b, equal_var=False).pvalue
+        m_a, m_b = stat.mean(v_a), stat.mean(v_b)
+        print(f"{n_a:<{max_length}} VS {n_b:<{max_length}}: pvalue = {pval:.2%} ({pretty_pvalue(pval)})")

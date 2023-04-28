@@ -4,7 +4,7 @@
 
 -- l'aggrégat sur emp
 -- EXPLAIN
-WITH sal AS (
+WITH sal AS MATERIALIZED (
     SELECT depname, AVG(salary) as avg
     FROM emp GROUP BY depname
 )

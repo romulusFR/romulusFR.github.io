@@ -2,7 +2,7 @@
 -- la différence entre son salaire et le salaire moyen de son équipe
 -- version WINDOWS
 
--- EXPLAIN ANALYZE
+-- EXPLAIN
 SELECT
     emp.*,
     round(salary - avg(salary) OVER w) AS delta

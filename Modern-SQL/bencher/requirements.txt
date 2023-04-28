@@ -2,3 +2,4 @@ python-dotenv # attention à ce nom
 psycopg
 psycopg_pool
 tqdm
+scipy
