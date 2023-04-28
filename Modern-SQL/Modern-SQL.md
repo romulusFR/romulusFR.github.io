@@ -58,10 +58,10 @@ psql -U cafe -h localhost -p 5433
 Les fichiers suivants, à exécuter avec l'utilisateur `cafe` dans la base `cafe`, permettent de créer les relations suivantes :
 
 - [db_demo.sql](data/db_demo.sql) : des relations temporaires d'exemple,
-- [db_emp_dep.sql](data/db_emp_dep.sql) : un jeu d'essai _RH_ avec une table `emp` pour les employés et une table `dep` pour la hiérarchie des services.
-  - [generate_emp.sql](data/generate_emp.sql) : génère un grand nombre d'employés mais ne génère pas de services
-  - [generate_emp_dep.sql](data/generate_emp_dep.sql) : génère un grand nombre d'employés **et** de services
-- [](data/db_sensor.sql) : une table `sensor` contenant des données générées aléatoirement,
+- [db_emp_dep.sql](data/db_emp_dep.sql) : un jeu d'essai _RH_ avec une table `emp` pour les employés et une table `dep` pour la hiérarchie des services :
+  - [generate_emp.sql](data/generate_emp.sql) : génère 100.000 employés mais ne génère **pas** de services,
+  - [generate_emp_dep.sql](data/generate_emp_dep.sql) : génère 100.000 employés **et** 1000 services (sans hiérarchie).
+- [db_sensor.sql](data/db_sensor.sql) : une table `sensor` contenant des données générées aléatoirement.
 
 ### Références
 
@@ -109,15 +109,17 @@ En complément :
 ## Dates, heures et intervalles
 
 Les dates disposent d'opérateurs SQL standardisés.
-On construit l'exemple ci-dessous ([source](data/db_demo.sql)) avec au passage l'option `TEMPORARY` et les dates à différentes précisions au format [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601).
+On construit l'exemple ci-dessous ([source](data/db_demo.sql)) avec au passage l'option `TEMPORARY`, une [colonne générée](https://www.postgresql.org/docs/current/ddl-generated-columns.html) et les dates à différentes précisions au format [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601).
+Il est recommandé d'utiliser systématiquement un fuseau horaire, voir [la liste PostgreSQLq](https://www.postgresql.org/docs/15/view-pg-timezone-abbrevs.html)
 
 ```sql
 DROP TABLE IF EXISTS demo;
--- option TEMPORARY pour une relation éphémère.
+
 CREATE TEMPORARY TABLE demo(
   id int PRIMARY KEY,
   name text,
-  timestamp timestamp WITH time zone DEFAULT CURRENT_TIMESTAMP(0) -- /!\ toujours une time zone
+  timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP(0),
+  epoch_utc bigint GENERATED ALWAYS AS (EXTRACT (epoch FROM timestamp at time zone 'UTC')) STORED
 );
 
 INSERT INTO demo VALUES
@@ -134,7 +136,6 @@ TABLE demo;
 ```
 
 L'opérateur [`EXTRACT(field FROM source)`](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-EXTRACT) permet d'extraire jour, jour de l'année, etc. des `timestamp` et des `interval`.
-
 La fonction [`to_char`](https://www.postgresql.org/docs/current/functions-formatting.html) permet la conversion en chaînes de caractères.
 
 ```sql
@@ -157,8 +158,14 @@ SELECT
 FROM
     demo;
 
--- nombre d'heures entre le 25 avril et maintenant
+-- nb heures depuis le 25 avril
 SELECT CAST(EXTRACT(epoch FROM now() - '2023-04-25')/3600 AS int) AS hours;
+
+-- la TZ de la NC
+SELECT * FROM pg_timezone_names WHERE name ~* 'noumea' AND name !~ '^posix';
+
+-- le jour du grand crash
+SELECT to_timestamp(2^31) at time zone 'Pacific/Noumea';
 ```
 
 ## Gestion des modifications
