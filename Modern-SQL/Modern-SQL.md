@@ -18,10 +18,9 @@ Support de présentation pour le [café développeur·se LIRIS : SQL moderne](ht
     - [Clauses `ORDER BY` et `RANGE/ROWS/GROUP` des fenêtres](#clauses-order-by-et-rangerowsgroup-des-fenêtres)
   - [Requêtes analytiques](#requêtes-analytiques)
     - [Codage du pivot](#codage-du-pivot)
-    - [Les opérateurs de regroupement `GROUPING SETS`](#les-opérateurs-de-regroupement-grouping-sets)
+    - [Rregroupement `GROUPING SETS`](#rregroupement-grouping-sets)
   - [Vues, vues récursives et vues matérialisées](#vues-vues-récursives-et-vues-matérialisées)
     - [Les _Common Table Expression_ (CTE)](#les-common-table-expression-cte)
-    - [Exercices](#exercices)
 
 ## Introduction
 
@@ -538,9 +537,12 @@ Il y a un relevé par seconde environ et à chaque fois la valeur est `mod(i, 60
 #### Comparaison au `JOIN LATERAL`
 
 Par défaut, on ne peut **pas** faire de sous-requêtes corrélées dans le `FROM`, l'opérateur `JOIN LATERAL` lève cette restriction qui permet de faire des _sous-requêtes latérales_.
-Le principe est, pour chaque tuple de la table de gauche, **on évalue la requête qui produit la table de droite en utilisant les valeur du tuple de gauche**.
+Le principe est, pour chaque tuple de la table de gauche, **on évalue la requête qui produit la table de droite en utilisant les valeur du tuple de gauche**. On prend un exemple ci après. Il y en a un autre dans [generate_emp.sql](data/generate_emp.sql).
 
-Par exemple, le calcul _de la variation de valeur entre un relevé et celui qui le précède immédiatement_ (peu importe le capteur concerné) peut se faire avec `CROSS JOIN LATERAL` après avoir donné un rang aux tuples. Par construction, la valeur de `delta` vaut 59 fois `1` et 1 fois `-59`.
+**Requête** : _calculer la variation de valeur entre un relevé et celui qui le précède immédiatement dans le temps (peu importe le capteur concerné)_.
+
+Cette requête peut se calculer avec un `[CROSS] JOIN LATERAL` après avoir donné un rang aux tuples, ici via la CTE et `dense_rank()` sur une fenêtre qui porte sur toute la table (pas de `PARTITION BY`).
+Par construction, la valeur de `delta` vaut 59 fois `1` et 1 fois `-59`.
 
 ```sql
 WITH ordered_sensor AS(
@@ -562,7 +564,7 @@ FROM ordered_sensor AS s1 CROSS JOIN LATERAL (
 ;
 ```
 
-On obtient le plan suivant. Pour complétude, on va donner une version n'utilisant pas de `JOIN LATERAL` et s'appuyant sur un produit cartésien et un `GROUP BY` mais elle donnera ici _le même plan_, voir [lag_group_by.sql](queries/lag_group_by.sql).
+On obtient le plan suivant. Pour complétude, on va donner une version n'utilisant pas de `JOIN LATERAL` et s'appuyant sur un produit cartésien et un `GROUP BY` et qui donne sur ce cas _le même plan_, voir [lag_group_by.sql](queries/lag_group_by.sql).
 
 ```raw
                                          QUERY PLAN
@@ -583,7 +585,7 @@ On obtient le plan suivant. Pour complétude, on va donner une version n'utilisa
                ->  CTE Scan on ordered_sensor s2  (cost=0.00..2000.02 rows=100001 width=40)
 ```
 
-On va faire la même chose avec la _window function_ `lag()`, comparer les plans d'exécution et évaluer la performance empirique avec [bench.py](bencher/bench.py). Notons qu'on a pas tout à fait le même résultat de requête : le premier relevé de la liste est perdu avec la solution `JOIN LATERAL`. La requête est comme suit :
+On va faire la même chose avec la _window function_ `lag()` puis comparer les plans d'exécution et évaluer la performance empirique avec [bench.py](bencher/bench.py). Notons qu'on a pas tout à fait le même résultat de requête : le premier relevé de la liste est _perdu_ avec la solution `JOIN LATERAL`. La requête est comme suit :
 
 ```sql
 SELECT
@@ -595,7 +597,7 @@ WINDOW win AS (ORDER BY time_stamp ASC)
 ORDER BY time_stamp;
 ```
 
-Son plan est particulièrement efficace : il suffit simplement de trier `sensor` puis de faire un parcours où on calcule la position et une soustraction.
+Son plan est particulièrement efficace : il suffit simplement de trier `sensor` puis de faire un parcours où on calcule la position du tuple et où on fait une soustraction de valeur avec le tuple précédent.
 
 ```raw
                                 QUERY PLAN
@@ -606,7 +608,7 @@ Son plan est particulièrement efficace : il suffit simplement de trier `sensor`
          ->  Seq Scan on sensor  (cost=0.00..1637.01 rows=100001 width=16)
 ```
 
-La différence empirique de performance est sans surprise **substantielle** avec un facteur 4.
+La différence empirique de performance est **substantielle** avec un facteur 4.
 
 ```raw
 python3 bench.py --repeat 100 --verbose ../queries/lag_lateral.sql ../queries/lag_window.sql
@@ -623,16 +625,20 @@ Pairwise (Welch) T-tests
 
 ## Requêtes analytiques
 
-L'exemple employé est celui des [tableaux de contingences](https://en.wikipedia.org/wiki/Contingency_table) qui donnent pour deux variables catégorielles les effectifs concernés et qui sont très utilisés en statistique.
-On considère pour cela la requête : _pour chaque service, compter le nombre d'employés avec un salaire dans l'intervalle [0,1000), ceux dans [1000,2000) etc._ exprimée comme suit.
+Un exemple de requête analytique est celui des [tableaux de contingences](https://en.wikipedia.org/wiki/Contingency_table) qui donnent pour deux variables catégorielles les effectifs concernés.
+Ces représentations sont très utilisées en statistiques.
+On considère comme exemple la requête suivante.
+
+**Requête** : _pour chaque service, compter le nombre d'employés avec un salaire dans l'intervalle [0,1000), ceux dans [1000,2000) etc._.
 
 ### Codage du pivot
 
-Les _pivots_, typiques OLAP, appelés aussi _tableaux croisés_, consistent à créer un tableau 2D avec _une colonne_ pour chaque valeur d'un attribut comme dans la requête d'exemple. L'opération `PIVOT` n'existe malheureusement **pas** en SQL.
-
+Les _pivots_ sont des opérations typiques OLAP, appelés aussi _tableaux croisés_, qui consistent à créer un tableau 2D avec _une colonne_ **pour chaque valeur** d'un attribut comme dans la requête d'exemple. L'opération `PIVOT` n'existe malheureusement **pas** en SQL.
+On va voir plusieurs façon de pivoter en SQL standard et avec des extensions PostgreSQL.
 On crée d'abord une fonction outil [int4slice()](data/int4slice.sql) qui crée un [_range type_](https://www.postgresql.org/docs/current/rangetypes.html) qu'on utilise dans la requête suivante :
 
 ```sql
+-- si besoin reset la base avec \i data/db_emp_dep.sql
 SELECT depname, int4slice(salary) AS tranche, count(empno) AS nb
 FROM emp
 GROUP BY depname, tranche
@@ -650,9 +656,8 @@ ORDER BY depname, tranche;
  sales     | [5000,6000) |  1
 ```
 
-C'est **la base de travail** et dans ce format qu'il faut stocker le résultat le cas échéant.
+Ce résultat est **la base de travail**, l'agrégat. C'est dans ce format qu'il faut matérialiser le résultat pour un traitement automatique ou le stockage.
 Cette représentation _en longueur_ est difficile à interpréter par un humain, on souhaiterait plutôt avoir une représentation à doubles entrées avec **autant de colonnes qu'il y a de tranches salariales**.
-
 Pour cela, il faut _pivoter_ ce résultat de requête, comme dans l'illustration ci-dessous, reprise de [modern SQL](https://modern-sql.com/use-case/pivot) pour avoir la forme bi-dimensionnelle souhaitée.
 
 ![Illustration du pivot qui transforme les valeurs d'une colonne en autant de colonnes](img/pivot.png)
@@ -697,9 +702,8 @@ GROUP BY depname;
 #### Extension PostgreSQL `tablefunc` et commande `\crosstabview`
 
 On peut aussi utiliser une extension comme [`tablefunc`](https://www.postgresql.org/docs/current/tablefunc.html) qui s'installe par la commande `CREATE EXTENSION tablefunc;`.
-
 La fonction `crosstab(source_sql text, category_sql text) → setof record` pivote un résultat de requête : on passe la requête qui fait l'agrégation en premier paramètre et la requête qui génère la liste des colonnes en second.
-Il faut toutefois typer la requête avec la liste des colonnes ce qui limite la le dynamisme de la fonction.
+Il faut toutefois typer la requête avec la liste **statique** des colonnes ce qui limite la le dynamisme de la fonction.
 
 ```sql
 SELECT *
@@ -716,7 +720,7 @@ SELECT *
 ;
 ```
 
-Notez les `NULL` représentés ici par `Ø` au lieu des valeurs `0` de la version avec les `FILTER`.
+Notez les `NULL` représentés ici par `Ø` au lieu des valeurs `0` de la version avec les `FILTER` et surtout la définition du SQL comme argument **textuel** de `crosstab()`.
 
 ```bash
   depname  | [3000,4000) | [4000,5000) | [5000,6000) | [6000,7000)
@@ -741,11 +745,12 @@ La commande `\crosstabview` est très pratique en `psql` mais inutilisable aille
 ```sql
 SELECT
   depname,
-  mk_slice(salary) AS tranche,
+  int4slice(salary) AS tranche,
   count(empno) AS nb
 FROM emp
-GROUP BY depname, mk_slice(salary)
-ORDER BY depname, mk_slice(salary);
+GROUP BY depname, int4slice(salary)
+-- attention à l'ordre
+ORDER BY int4slice(salary), depname;
 
 \crosstabview
 ```
@@ -758,57 +763,55 @@ ORDER BY depname, mk_slice(salary);
  sales     |           3 |           1 |             |
 ```
 
-### Les opérateurs de regroupement `GROUPING SETS`
+### Rregroupement `GROUPING SETS`
 
 Ces opérateurs permettent de spécifier plusieurs dimensions sur lesquelles agréger les données selon **toutes ou parties des dimensions**, là aussi, une opération typique (R)OLAP.
-Par exemple, pour les capteurs, on voudrait avoir _le nombre de relevés pour chaque heure_ mais avec au surplus :
+Par exemple, pour les capteurs de la table ``sensor`, on souhaite calculer la requête suivante, où on ajoute _les sommes marginales_ au tableau 2D précédent.
 
-- pour chaque capteur **et** pour _tous_ les capteurs;
-- pour chaque heure **et** pour _toutes_ les dates.
+**Requête** : _calculer le nombre de relevés de chaque heure par capteur, avec aussi le nombre de relevés par heure quel que soit le capteur, le nombre de relevés par capteur quelle que soit l'heure et enfin le nombre total de relevés_.
 
-Si on a $c$ capteur et $d$ heures, on obtient un tableau de de taille $(c+1) \times (d+1)$ avec les _sommes marginales_.
 La solution SQL-92 consisterait à faire l'`UNION` des **quatre agrégats calculés séparément** :
 
 ```sql
 -- chaque capteur / chaque heur
-SELECT sensorid AS sensorid, date_trunc('hour', time_stamp) AS hour, count(value) AS nb
+SELECT sensorid AS sensorid, date_trunc('hour', time_stamp) AS h, count(value) AS nb
 FROM sensor
-GROUP BY sensorid, hour
+GROUP BY sensorid, h
 
 UNION
 
 -- tous les capteurs / chaque heur
-SELECT NULL, date_trunc('hour', time_stamp) AS hour, count(value)
+SELECT NULL, date_trunc('hour', time_stamp) AS h, count(value)
 FROM sensor
-GROUP BY hour
+GROUP BY h
 
 UNION
 
 -- chaque capteur / tous les temps
-SELECT sensorid AS sensorid, NULL AS hour, count(value)
+SELECT sensorid AS sensorid, NULL AS h, count(value)
 FROM sensor
 GROUP BY sensorid
 
 UNION
 
 -- tous les capteurs / tous les temps
-SELECT NULL AS sensorid, NULL AS hour, count(value) AS nb
+SELECT NULL AS sensorid, NULL AS h, count(value) AS nb
 FROM sensor
-ORDER BY sensorid NULLS FIRST, hour NULLS FIRST;
+ORDER BY sensorid NULLS FIRST, h NULLS FIRST;
 ```
 
-On voit bien l'horreur que constitue cette requête.
+On voit la difficile duplication de code posée par cette requête.
 Avec les opérateurs `GROUPING SET`, ici l'opérateur `CUBE` en particulier, on va pouvoir **spécifier simultanément plusieurs niveaux d'agrégation**.
 On pourra compléter avec `\crosstabview` pour avoir une représentation en 2D.
 
 ```sql
 SELECT
     sensorid AS sensorid,
-    date_trunc('hour', time_stamp) AS hour,
+    date_trunc('hour', time_stamp) AS h,
     count(value) AS nb
 FROM sensor
-GROUP BY CUBE(sensorid, hour)
-ORDER BY sensorid NULLS FIRST, hour NULLS FIRST;
+GROUP BY CUBE(sensorid, h)
+ORDER BY sensorid NULLS FIRST, h NULLS FIRST;
 ```
 
 Au niveau des performance, il ne faut pas espérer de gains, c'est surtout la simplification de l'écriture et la suppression des copies de code qu'on espère.
@@ -826,23 +829,20 @@ Pairwise (Welch) T-tests
 
 ## Vues, vues récursives et vues matérialisées
 
-Les vue ne sont pas particulièrement _modernes_ mais _très utilisées_ :
+Les vue ne sont pas particulièrement _modernes_ mais _très utilisées_. En revanche leur extension au requêtes récursives est moins connue.
 
-- une vue est _une requête à laquelle on a donné un nom_ et qui s'utilise _comme une table_, en refaisant le calcul (s'il n'est ni dans le cache ni matérialisé).
-- on peut **matérialiser la vue**, auquel cas la vue devient _vraiment_ une table avec des tuples **persistants** :
-  - dans ce cas là il faut _rafraîchir_ la vue quand les données sources change et mettre à jour la table de stockage.
+Une vue est _une requête à laquelle on a donné un nom_ et qui s'utilise _comme une table_, en refaisant le calcul (s'il n'est ni dans le cache ni matérialisé). On peut **matérialiser la vue**, auquel cas la vue devient _vraiment_ une table avec des tuples **persistants**. Dans ce cas là il faut _rafraîchir_ la vue quand les données sources change et mettre à jour la table de stockage avec la commande [`REFRESH MATERIALIZED VIEW`](https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html).
 
-Les cas d'usages des vues sont :
+Des cas d'usages des vues sont :
 
 - fournir une **interface** au client, s'abstraire des tables concrètes,
 - **contrôler les accès** en limitant les colonnes ou lignes accessibles,
 - **factoriser** les requêtes fréquentes,
 - assurer la **performance** des requêtes analytiques via la matérialisation.
 
-Par exemple une vue sur les services :
+Par exemple une vue sur les services de la base RH :
 
 ```sql
-
 DROP VIEW IF EXISTS dep_summary;
 CREATE VIEW dep_summary AS(
   SELECT depname, count(empno) AS nb_emp
@@ -853,29 +853,40 @@ CREATE VIEW dep_summary AS(
 
 TABLE dep_summary;
 INSERT INTO dep VALUES ('test', NULL);
-TABLE dep_summary;
 
 -- la vue est à jour : la requête a été recalculée
+TABLE dep_summary;
 ```
 
 ### Les _Common Table Expression_ (CTE)
 
-- le `WITH` _non récursif_ est utilisable comme une vue _à portée locale_
-  - très pratique pour _organiser les grosses requêtes_
-- avec le mot-clef `[RECURSIVE]` on peut construire des vues qui font référence **à elle-même dans leur définition**
-  - étend **considérablement** l'expressivité de SQL
-    - permet de faire des parcours d'arbres/graphes
-  - peut conduire à des requêtes _qui ne terminent jamais_ !
+La clause `WITH` (non récursive) est utilisable comme une vue _à portée locale_, sont usage est conseillé pour _organiser les requêtes avec des requêtes imbriquées_ (non corrélées).
+
+Avec la clause `WITH RECURSIVE` on peut construire des vues qui font référence **à elle-même dans leur définition**, ceci étend **considérablement** l'expressivité de SQL : cela permet de faire des parcours d'arbres/graphes de profondeur non-bornées et peut conduire à des requêtes _qui ne terminent jamais_ (ce qui est impossible en SQL sans récursion).
 
 #### CTE non récursives
 
+On a montré un exemple de `MATERIALIZED` dans [agg_group_by_materialized.sql](queries/agg_group_by_materialized.sql).
 Dans l'exemple suivant, `small_dep` est une _vue_ locale, dont la définition sera utilisée soit :
 
-- `NOT MATERIALIZED`, c'est-à-dire _dépliée_ lors de l'évaluation de la requête, son contenu est injecté dans la requête englobante et l'optimisation est faite globalement;
-- `MATERIALIZED`, les évaluations sont séquentielles : la sous-requête, puis la requête englobante utilise le résultat qui a été enregistré.
+- `[NOT MATERIALIZED]` est une clause optionnelle, où la CTE est _dépliée_ lors de l'évaluation de la requête, sa définition est injectée dans la requête englobante et l'optimisation est faite globalement avant exécution;
+- `MATERIALIZED`, les évaluations sont séquentielles : on évalue la sous-requête, puis la requête englobante qui utilise le résultat qui a été enregistré.
 
 ```sql
+EXPLAIN
 WITH small_dep AS NOT MATERIALIZED (
+  SELECT depname
+  FROM dep LEFT OUTER JOIN emp USING (depname)
+  GROUP BY depname
+  HAVING count(empno) BETWEEN 1 AND 2
+  ORDER BY depname
+)
+
+SELECT emp.*
+FROM emp JOIN small_dep USING (depname);
+
+EXPLAIN
+WITH small_dep AS MATERIALIZED (
   SELECT depname
   FROM dep LEFT OUTER JOIN emp USING (depname)
   GROUP BY depname
@@ -887,15 +898,53 @@ SELECT emp.*
 FROM emp JOIN small_dep USING (depname);
 ```
 
-**TODO** comparer les plans d'exécution des deux requêtes, avec/sans le mot-clef `NOT`.
+Les plans de ces deux requêtes sont les suivants
 
-**TODO** vérifier la différence de performance, qui n'est pas très importante sur ce cas. Quand peut-elle changer ?
+```raw
+                                       QUERY PLAN
+-----------------------------------------------------------------------------------------
+ Hash Join  (cost=2.54..3.73 rows=4 width=15)
+   Hash Cond: (emp.depname = dep.depname)
+   ->  Seq Scan on emp  (cost=0.00..1.11 rows=11 width=15)
+   ->  Hash  (cost=2.53..2.53 rows=1 width=8)
+         ->  Sort  (cost=2.51..2.52 rows=1 width=8)
+               Sort Key: dep.depname
+               ->  HashAggregate  (cost=2.38..2.50 rows=1 width=8)
+                     Group Key: dep.depname
+                     Filter: ((count(emp_1.empno) >= 1) AND (count(emp_1.empno) <= 2))
+                     ->  Hash Right Join  (cost=1.18..2.33 rows=11 width=12)
+                           Hash Cond: (emp_1.depname = dep.depname)
+                           ->  Seq Scan on emp emp_1  (cost=0.00..1.11 rows=11 width=11)
+                           ->  Hash  (cost=1.08..1.08 rows=8 width=8)
+                                 ->  Seq Scan on dep  (cost=0.00..1.08 rows=8 width=8)
+
+                                     QUERY PLAN
+-------------------------------------------------------------------------------------
+ Hash Join  (cost=2.55..3.74 rows=4 width=15)
+   Hash Cond: (emp.depname = small_dep.depname)
+   CTE small_dep
+     ->  Sort  (cost=2.51..2.52 rows=1 width=8)
+           Sort Key: dep.depname
+           ->  HashAggregate  (cost=2.38..2.50 rows=1 width=8)
+                 Group Key: dep.depname
+                 Filter: ((count(emp_1.empno) >= 1) AND (count(emp_1.empno) <= 2))
+                 ->  Hash Right Join  (cost=1.18..2.33 rows=11 width=12)
+                       Hash Cond: (emp_1.depname = dep.depname)
+                       ->  Seq Scan on emp emp_1  (cost=0.00..1.11 rows=11 width=11)
+                       ->  Hash  (cost=1.08..1.08 rows=8 width=8)
+                             ->  Seq Scan on dep  (cost=0.00..1.08 rows=8 width=8)
+   ->  Seq Scan on emp  (cost=0.00..1.11 rows=11 width=15)
+   ->  Hash  (cost=0.02..0.02 rows=1 width=32)
+         ->  CTE Scan on small_dep  (cost=0.00..0.02 rows=1 width=32)
+```
 
 #### CTE récursives
 
-On peut définir des vues qui **font référence à elles-mêmes** et permet de calculer des résultats _impossible_ en SQL sans récursion, comme _la fermeture transitive_ d'une relation.
+On peut définir des vues qui **font référence à elles-mêmes** et permettent de calculer des résultats _impossibles à calculer_ en SQL sans récursion, comme _la fermeture transitive_ d'une relation.
+On prend par exemple la requête suivante.
 
-Par exemple, ici le calcul de _fermeture transitive_ des services : pour chaque service, calculer **tous les sous-services qui en dépendent directement ou pas**.
+**Requête** : _pour chaque service, calculer **tous** les sous-services qui en dépendent directement ou transitivement_.
+
 Autrement dit, dans l'arbre `dep` des services seuls les relations _enfant - parent_ sont stockées, ici on veut _tous les descendants_, qu'elle que soit la profondeur.
 De base, la relation `dep` est comme suit :
 
@@ -940,7 +989,7 @@ Si on utilise souvent la table `dep_rec`, on aura très envie d'en faire une vue
 DROP VIEW IF EXISTS dep_trans;
 
 -- syntaxe abrégée pour les vues récursives, qui évite un sélect
--- https://www.postgresql.org/docs/current/sql-createview.html
+-- voir <https://www.postgresql.org/docs/current/sql-createview.html>
 CREATE RECURSIVE VIEW dep_trans(depname, parent) AS (
     SELECT depname, parent
     FROM dep
@@ -953,7 +1002,7 @@ CREATE RECURSIVE VIEW dep_trans(depname, parent) AS (
 ```sql
 DROP MATERIALIZED VIEW IF EXISTS dep_trans_m;
 
--- pas de syntaxe abrégée ici
+-- sans la syntaxe abrégée
 CREATE MATERIALIZED VIEW dep_trans_m AS(
   WITH RECURSIVE dep_trans(depname, parent) AS (
       SELECT depname, parent
@@ -966,7 +1015,7 @@ CREATE MATERIALIZED VIEW dep_trans_m AS(
 );
 ```
 
-### Exercices
+#### Exercices
 
 Écrire les requêtes suivantes :
 
