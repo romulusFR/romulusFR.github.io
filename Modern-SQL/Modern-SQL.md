@@ -5,7 +5,7 @@ Support de présentation pour le [café développeur·se LIRIS : SQL moderne](ht
 - [Café développeur·se LIRIS : SQL moderne](#café-développeurse-liris--sql-moderne)
   - [Introduction](#introduction)
     - [Jeux de données](#jeux-de-données)
-    - [Références](#références)
+    - [Documentation PostgreSQL de référence](#documentation-postgresql-de-référence)
   - [Dates, heures et intervalles](#dates-heures-et-intervalles)
   - [Gestion des modifications](#gestion-des-modifications)
     - [Auto-increment avec `AS IDENTITY`](#auto-increment-avec-as-identity)
@@ -25,13 +25,12 @@ Support de présentation pour le [café développeur·se LIRIS : SQL moderne](ht
 
 ## Introduction
 
-_A lot has changed since SQL-92_ comme le dit Markus WINAND sur <https://modern-sql.com/> mais dans les formations universitaires comme dans la pratique, de nombreux utilisateurs connaissent mal les constructions introduites depuis 1992.
+_A lot has changed since SQL-92_ _dixit_ Markus WINAND sur <https://modern-sql.com/>. Toutefois, dans les formations universitaires comme dans la pratique, de nombreux utilisateurs connaissent mal les constructions introduites après 1992.
 
 Le but de ce café est de montrer des opérateurs SQL des [standards contemporains](https://en.wikipedia.org/wiki/SQL#Standardization_history) (SQL:1999, SQL:2003, SQL:2011).
-Que ce soit pour leur pouvoir d'expression, pour leur facilité d'utilisation ou pour leurs performance, ces opérateurs facilitent grandement certaines activités.
-Seront notamment abordés :
+Que ce soit pour leur pouvoir d'expression, pour leur facilité d'utilisation ou pour leurs performances, ces opérateurs facilitent grandement certaines activités. Seront notamment abordés :
 
-- la extractions de dates avec `EXTRACT` et de chaînes,
+- la extractions de dates avec `EXTRACT`,
 - le contrôle des écritures `RETURNING`, `ON CONFLICT` et `MERGE`,
 - les opérateurs pour les requêtes analytiques `WINDOWS`, `GROUPING` et `FILTER`,
 - les `Common Table Expression` avec `WITH` (et `WITH RECURSIVE`).
@@ -63,11 +62,9 @@ Les fichiers suivants, à exécuter avec l'utilisateur `cafe` dans la base `cafe
   - [generate_emp_dep.sql](data/generate_emp_dep.sql) : génère 100.000 employés **et** 1000 services (sans hiérarchie).
 - [db_sensor.sql](data/db_sensor.sql) : une table `sensor` contenant des données générées aléatoirement.
 
-Un programme Python de comparaison de performance de requêtes [bench.py](bencher/bench.py) est fourni.
+Un programme Python de comparaison de performance de requêtes [bench.py](bencher/bench.py) est fourni avec [requirements.txt](bencher/requirements.txt).
 
-### Références
-
-Documentation officielle PostgreSQL
+### Documentation PostgreSQL de référence
 
 - `RETURNING`
   - <https://www.postgresql.org/docs/current/dml-returning.html>
@@ -103,7 +100,7 @@ Documentation officielle PostgreSQL
 - `LIKE, SIMILAR TO, LIKE_REGEX` et autres pour la recherche de sous-chaînes
   - <https://www.postgresql.org/docs/current/functions-matching.html>
 
-En complément :
+#### Complément
 
 - un exposé _Postgres Window Magic_ de Bruce MOMJIAN <https://momjian.us/main/presentations/sql.html> (vidéo et slides)
 - <https://modern-sql.com/> _A lot has changed since SQL-92_ par Markus WINAND.
@@ -112,16 +109,16 @@ En complément :
 
 Les dates disposent d'opérateurs SQL standardisés.
 On construit l'exemple ci-dessous ([source](data/db_demo.sql)) avec au passage l'option `TEMPORARY`, une [colonne générée](https://www.postgresql.org/docs/current/ddl-generated-columns.html) et les dates à différentes précisions au format [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601).
-Il est recommandé d'utiliser systématiquement un fuseau horaire, voir [la liste PostgreSQLq](https://www.postgresql.org/docs/15/view-pg-timezone-abbrevs.html)
+Il est recommandé d'utiliser **systématiquement** un fuseau horaire.
 
 ```sql
 DROP TABLE IF EXISTS demo;
 
 CREATE TEMPORARY TABLE demo(
-  id int PRIMARY KEY,
-  name text,
-  timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP(0),
-  epoch_utc bigint GENERATED ALWAYS AS (EXTRACT (epoch FROM timestamp at time zone 'UTC')) STORED
+  demo_id int PRIMARY KEY,
+  demo_name text,
+  demo_ts timestamp with time zone DEFAULT CURRENT_TIMESTAMP(0),
+  epoch_utc bigint GENERATED ALWAYS AS (EXTRACT (epoch FROM demo_ts at time zone 'UTC')) STORED
 );
 
 INSERT INTO demo VALUES
@@ -137,26 +134,27 @@ INSERT INTO demo VALUES
 TABLE demo;
 ```
 
-L'opérateur [`EXTRACT(field FROM source)`](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-EXTRACT) permet d'extraire jour, jour de l'année, etc. des `timestamp` et des `interval`.
+L'opérateur [`EXTRACT(field FROM source)`](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-EXTRACT) permet d'extraire le numéro de jour dans la semaine, le jour de l'année, etc. des `timestamp`.
 La fonction [`to_char`](https://www.postgresql.org/docs/current/functions-formatting.html) permet la conversion en chaînes de caractères.
+Le type `interval` permet de gérer les différences entre deux dates et de faire des additions et soustractions avec les `timestamp`.
 
 ```sql
 -- SET lc_time TO 'en_GB.utf8';
 
 SELECT
-  EXTRACT(CENTURY FROM timestamp) AS century,
-  EXTRACT(DOY FROM timestamp) AS doy, -- day of the year
-  EXTRACT(DOW FROM timestamp) AS dow, -- day of the week
-  EXTRACT(WEEK FROM timestamp) AS week,
-  EXTRACT(MINUTE FROM timestamp) AS minute,
-  to_char(timestamp, 'TMDay DD TMMonth YYYY à HH:MM')
+  EXTRACT(CENTURY FROM demo_ts) AS century,
+  EXTRACT(DOY FROM demo_ts) AS doy, -- day of the year
+  EXTRACT(DOW FROM demo_ts) AS dow, -- day of the week
+  EXTRACT(WEEK FROM demo_ts) AS week,
+  EXTRACT(MINUTE FROM demo_ts) AS minute,
+  to_char(demo_ts, 'TMDay DD TMMonth YYYY à HH:MM')
 FROM
   demo;
 
 SELECT
-    timestamp - (INTERVAL '1 day') AS day_before,
-    timestamp,
-    timestamp + (INTERVAL '1 week') AS week_after
+    demo_ts - (INTERVAL '1 day') AS day_before,
+    demo_ts,
+    demo_ts + (INTERVAL '1 week') AS week_after
 FROM
     demo;
 
@@ -184,7 +182,7 @@ CREATE TABLE emp(
 );
 ```
 
-Il est aujourd'hui **recommandé** d'utiliser `AS IDENTITY` et non plus `serial` qui pose un problème de gestion des droits sur la séquence associée à la colonne auto-increment.
+Il est aujourd'hui **recommandé** d'utiliser la clause `AS IDENTITY` et non plus le type `serial` qui pose un problème de gestion des droits sur la séquence associée à la colonne auto-incrémentée.
 
 - <https://stackoverflow.com/questions/55300370/postgresql-serial-vs-identity>
 - <https://www.2ndquadrant.com/en/blog/postgresql-10-identity-columns/>
@@ -194,15 +192,15 @@ Il est aujourd'hui **recommandé** d'utiliser `AS IDENTITY` et non plus `serial`
 
 Extrait de la [documentation](https://www.postgresql.org/docs/current/sql-insert.html) de la clause `INSERT`.
 
-> The optional `RETURNING` clause causes `INSERT` to compute and return value(s) based on each row actually inserted (or updated, if an ON CONFLICT DO UPDATE clause was used). This is primarily useful for obtaining values that were supplied by defaults, such as a serial sequence number. However, any expression using the table's columns is allowed.
+> The optional `RETURNING` clause causes `INSERT` to compute and return value(s) based on each row actually inserted (or updated, if an `ON CONFLICT DO UPDATE` clause was used). This is _primarily useful for obtaining values that were supplied by defaults_, such as a serial sequence number. However, any expression using the table's columns is allowed.
 
-La clause `RETURNING` est notamment utilisée sur les `WITH` avec des modifications ou pour des colonnes de type _auto-increment_ précédentes.
+La clause `RETURNING` est notamment utilisée sur les `WITH` avec des modifications.
 La clause existe dans d'autres SGBD mais n'est pas complètement standard.
 
 Le script suivant semblable à [generate_emp.sql](data/generate_emp.sql) génère des employés dans le département `sales` et retourne les identifiants `empno` créés.
 
 ```sql
--- attention au comportement si on mixe auto-increment et valeurs manuelles
+-- /!\ attention au comportement si on mixe auto-increment et valeurs manuelles /!\
 TRUNCATE emp;
 
 WITH insert_query AS(
@@ -223,7 +221,7 @@ FROM insert_query JOIN dep USING (depname)
 
 ### `UPDATE` or `INSERT`
 
-L'_upsert_, appelé aussi _`UPDATE` or `INSERT`_ est une opération qui consiste à tenter d'insérer et de faire à défaut une mise-à-jour si le tuple existe déjà en **une seule** commande. Il y a deux façons de le faire en PostgreSQL.
+L'_upsert_, appelé aussi _update or insert_ est une opération qui consiste à _tenter_ d'insérer et de faire à défaut une mise-à-jour si le tuple existe déjà en **une seule** commande. Il y a deux façons de le faire en PostgreSQL.
 
 #### Clause `ON CONFLICT`
 
@@ -236,7 +234,7 @@ INSERT INTO demo VALUES (0, 'collision', DEFAULT);
 -- ERROR:  23505: duplicate key value violates unique constraint "demo_pkey"
 
 INSERT INTO demo VALUES (0, 'collision', DEFAULT)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (demo_id) DO NOTHING;
 -- INSERT 0 0
 
 INSERT INTO demo VALUES (0, 'collision', DEFAULT)
@@ -245,27 +243,27 @@ ON CONFLICT ON CONSTRAINT demo_pkey DO NOTHING;
 
 INSERT INTO demo VALUES (0, 'collision', DEFAULT)
 ON CONFLICT ON CONSTRAINT demo_pkey DO UPDATE SET
-  name=EXCLUDED.name,
-  timestamp=EXCLUDED.timestamp;
+  demo_name=EXCLUDED.demo_name,
+  demo_ts=EXCLUDED.demo_ts;
 -- INSERT 0 1
 ```
 
 #### Commande `MERGE`
 
-C'est la clause standard d'_upsert_ supportée depuis la version 15.
+C'est la solution standard SQL pour les _upsert_ supportée depuis la version 15 de PostgreSQL.
 Elle permet des traitements impossible avec `ON CONFLICT` mais n'intègre pas de clause `RETURNING`.
 
 ```sql
-WITH vals(id, name, timestamp) AS(
+WITH vals(demo_id, demo_name, demo_ts) AS(
     VALUES
     (42, 'tyty', CURRENT_TIMESTAMP),
     (43, 'tyty', CURRENT_TIMESTAMP)
 )
 
-MERGE INTO demo USING vals ON demo.id = vals.id
+MERGE INTO demo USING vals ON demo.demo_id = vals.demo_id
     WHEN MATCHED THEN UPDATE SET
-        timestamp = vals.timestamp,
-        name = vals.name
+        demo_ts = vals.demo_ts,
+        demo_name = vals.demo_name
     WHEN NOT MATCHED THEN
         INSERT VALUES (vals.*)
 ;
@@ -273,19 +271,20 @@ MERGE INTO demo USING vals ON demo.id = vals.id
 
 ## Fonctions de fenêtrage (_windows function_)
 
-_Une fonction de fenêtrage effectue un calcul sur un jeu d'enregistrements liés d'une certaine façon à l'enregistrement courant. On peut les rapprocher des calculs réalisables par une fonction d'agrégat. Cependant, **les fonctions de fenêtrage n'entraînent pas le regroupement des enregistrements traités en un seul**, [...]. À la place, chaque enregistrement garde son identité propre._ [Doc PostgreSQL (fr)](https://docs.postgresql.fr/current/tutorial-window.html)
+> A _window function_ performs a calculation across a set of table rows that are somehow related to the current row. This is comparable to the type of calculation that can be done with an aggregate function. However, _window functions do not cause rows to become grouped into a single output row like non-window aggregate calls would_. Instead, the rows retain their separate identities. Behind the scenes, the window function is able to access more than just the current row of the query result ([source](https://www.postgresql.org/docs/current/tutorial-window.html)).
 
-On a souvent besoin de combiner le résultat d'un agrégat avec des données _de la même table_.
-Comme on va le voir sur l'exemple suivant, on a une tension entre :
+On a souvent besoin de combiner le résultat d'un agrégat avec des données _de la même table_ pour par exemple étendre une entité avec des statistiques issue des associations comme avoir toutes les informations des étudiants et le nombre de candidatures et d'inscription. Dans ces applications, on a une tension entre :
 
-- le regroupement dont on a besoin pour le calcul
-- le résultat final qu'on ne veut **pas** regroupés, où on veut toutes les lignes.
+- le regroupement nécessaire au calcul, spécifié dans la clause `GROUP BY`,
+- le résultat final qu'on ne veut **pas** regroupés, où on veut **toutes** les lignes.
 
-On va prendre comme exemple la requête _donner toutes les informations de chaque employé ainsi que la différence entre son salaire et le salaire moyen de son équipe_.
+On va prendre comme exemple la requête suivante.
+
+**Requête :** _calculer toutes les informations de chaque employé ainsi que la différence entre son salaire et le salaire moyen de son équipe_.
 
 ### Solution traditionnelle
 
-Sans fenêtrage, on fait une sous-requête d'agrégation **et** une jointure sur la même table, avec une requête imbriquée `FROM` ou une CTE `WITH` :
+Sans fenêtrage, on fait une sous-requête d'agrégation **et** une jointure sur la même table, avec une requête imbriquée dans le `FROM` comme suit.
 
 ```sql
 SELECT emp.*, round(salary - sal.avg) AS delta
@@ -295,6 +294,8 @@ FROM emp JOIN (
     ON emp.depname = sal.depname
 ORDER BY depname, empno;
 ```
+
+On vérifie par exemple que le salaire moyen des développeurs est de 5020 et que le résultat est cohérent.
 
 ```raw
   depname  | empno | salary | delta
@@ -310,10 +311,10 @@ ORDER BY depname, empno;
  sales     |     3 |   4800 |   100
  sales     |     4 |   4800 |   100
  sales     |    12 |   4200 |  -500
-(11 rows)
 ```
 
-La même version avec `WITH` (on viendra sur cet opérateur), préférée personnellement car le rend la sous-requête plus lisible mais qui a **exactement le même plan d'exécution** (et donc le même résultat), voir [agg_group_by.sql](queries/agg_group_by.sql) :
+Une requête équivalente avec une CTE `WITH`. Solution personnellement recommandée car elle rend la sous-requête plus lisible.
+Ici sur l'exemple, on a **exactement le même plan d'exécution** (et donc le même résultat), voir [agg_group_by.sql](queries/agg_group_by.sql).
 
 ```sql
 WITH sal AS(
@@ -330,7 +331,7 @@ ORDER BY depname, empno;
 
 ### Solution _windows_
 
-Avec fenêtrage, on précise _la fenêtre_ (ou _partition_, mais le terme est polysémique), c'est-à-dire _le groupement intermédiaire sur lequel faire le calcul_, ici de moyenne. _Notez les parenthèses un peu surprenantes de la fonction `round`_, voir [perf_agg_windows.sql](queries/agg_windows.sql)
+Avec les fonctions de fenêtrage on définit _le groupement intermédiaire sur lequel faire le calcul_, ici de moyenne et les tuples concernés au sein du groupement (par défaut tous), voir [perf_agg_windows.sql](queries/agg_windows.sql)
 
 ```sql
 SELECT  emp.*,
@@ -339,9 +340,11 @@ FROM emp
 ORDER BY depname, empno;
 ```
 
-On peut grâce aux _windows function_ faire des opérations **difficiles à exprimer** sur le `GROUP BY`, par exemple le calcul _du rang_ (dense ou pas) du salarié dans son équipe.
+On peut grâce aux _windows function_ faire des opérations **difficiles à exprimer** sur le `GROUP BY`, par exemple le calcul _du rang_ (dense ou pas) du salarié dans son équipe. Le calcul du rang est particulièrement désagréable en SQL-92
 
-Par exemple la requête _donner le rang dense de chaque employé (les ex aequos ne créant pas de trous) par ordre de salaire décroissant au sein de son équipe avec l'écart à la moyenne entre son salaire et celle de son équipe_ s'exprime comme suit, voir [agg_rank.sql](queries/agg_rank.sql).
+**Requête :** _calculer le rang dense de chaque employé (les ex aequos ne créant pas de trous) par ordre de salaire décroissant au sein de son équipe avec l'écart à la moyenne entre son salaire et celle de son équipe_
+
+La requête s'exprime comme suit, voir [agg_rank.sql](queries/agg_rank.sql).
 
 ```sql
 SELECT  emp.*,
@@ -350,8 +353,6 @@ SELECT  emp.*,
 FROM emp
 ORDER BY depname, rank, empno;
 ```
-
-On vérifie que le salaire moyen est de par exemple 5020 pour les développeurs et que le résultat est cohérent.
 
 ```raw
   depname  | empno | salary | rank | delta
@@ -367,16 +368,15 @@ On vérifie que le salaire moyen est de par exemple 5020 pour les développeurs 
  sales     |     3 |   4800 |    2 |   100
  sales     |     4 |   4800 |    2 |   100
  sales     |    12 |   4200 |    3 |  -500
-(11 rows)
 ```
 
 ### Performance des fonctions de fenêtrage
 
-En plus de l'expression concise (mais quelque fois assez absconse) et de l'expressivité augmentée par rapport aux agrégats usuels SQL:19992, les fonctions de fenêtrage sont **performantes**.
+En plus de l'expression concise (mais assez absconse) et de l'expressivité augmentée par rapport aux agrégats usuels SQL-92, les fonctions de fenêtrage sont **performantes**.
 On reprend le jeu d'essai avec un peu plus de volume en générant 1 000 services et 100 000 employés, consulter et exécuter le fichier [generate_emp_dep.sql](data/generate_emp_dep.sql).
 
-On va comparer la solution traditionnelle SQL:1992 avec celle avec le fenêtrage grâce à la commande `EXPLAIN ANALYZE`.
-Pour la solution traditionnelle avec `GROUP BY` et `JOIN`, on obtient le plan suivant où la jointure est très efficace (un seul tuple par `depname` dans la sous-requête `q`)
+On va comparer la solution traditionnelle SQL-92 avec celle avec le fenêtrage grâce à la commande `EXPLAIN ANALYZE`.
+Pour la solution traditionnelle avec `GROUP BY` et `JOIN`, on obtient le plan suivant où la jointure est très efficace (un seul tuple par `depname` dans la sous-requête).
 
 ```raw
                                            QUERY PLAN
@@ -395,7 +395,7 @@ Pour la solution traditionnelle avec `GROUP BY` et `JOIN`, on obtient le plan su
 
 ```
 
-Avec la fonction de fenêtrage, le plan est débarrassé de la jointure, le plan est le suivant.
+Avec la fonction de fenêtrage, le plan est débarrassé de la jointure comme suit.
 
 ```raw
                                   QUERY PLAN
@@ -427,7 +427,7 @@ Si on force la matérialisation de la sous-requêtes `WITH` comme dans [agg_grou
                ->  Seq Scan on emp  (cost=0.00..1541.00 rows=100000 width=14)
 ```
 
-Sur 100 exécutions, on obtient les statistiques suivantes où les fonctions de fenêtrage sont compétitives.
+Sur 100 exécutions, on obtient les statistiques suivantes où les fonctions de fenêtrage sont **compétitives**.
 
 ```raw
 python3 bench.py --repeat 100 --verbose ../queries/agg_windows.sql ../queries/agg_group_by.sql ../queries/agg_group_by_mat.sql
@@ -447,7 +447,8 @@ Pairwise (Welch) T-tests
 
 ### Clauses `ORDER BY` et `RANGE/ROWS/GROUP` des fenêtres
 
-La syntaxe complète des `WINDOWS` est [très riche](https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS). On peut définir la partition avec `PARTITION BY` mais aussi l'ordre de tri au sein de la partition avec `ORDER BY` et la _largeur_ de la fenêtre au sein de la partition avec `{} RANGE | ROWS | GROUPS }`.
+La syntaxe complète des `WINDOWS` comporte [de nombreux opérateurs](https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS).
+On peut définir la partition avec `PARTITION BY` mais aussi l'ordre de tri au sein de la partition avec `ORDER BY` et la _largeur_ de la fenêtre au sein de la partition avec `{ RANGE | ROWS | GROUPS }`.
 L'ordre est nécessaire pour certaines fonctions comme `rank()` ou `dense_rank()`
 
 ```raw
@@ -457,10 +458,12 @@ L'ordre est nécessaire pour certaines fonctions comme `rank()` ou `dense_rank()
 [ frame_clause ]
 ```
 
-Au sein de la fenêtre, c'est-à-dire le sous-ensemble des tuples de la partition pris en compte pour le calcul, on peut utiliser des fonctions qui permettent de référencer les tuples précédents comme `lag()`.
-Un exemple typique est celui des requêtes où l'on calcule un _sous-total courant ou un delta_ avec la ligne précédente.
+Au sein de la fenêtre, c'est-à-dire le sous-ensemble des tuples de la partition pris en compte pour le calcul, on peut utiliser des fonctions qui permettent de référencer les tuples précédents comme `lag()` ou suivants comme `lead()`.
+Un exemple typique est celui des requêtes où l'on calcule un _sous-total courant ou un delta_ avec la ligne précédente ou la requête suivante sur la table `sensor`.
 
-Par exemple, la requête sur la table `sensor` qui calcule _pour chaque capteur, le temps en seconde entre deux relevés consécutifs_ en utilisa,t la fonction `lag()` et soustraction de dates.
+**Requête :** _pour chaque capteur, calculer le temps en seconde entre deux relevés consécutifs_
+
+On utilise la fonction `lag()` et la soustraction de dates qui donne un intervalle temporel..
 Quand la définition de la fenêtre est longue ou employée sur plusieurs attributs, on peut la définir avec la clause `WINDOWS` et la réemployer comme suit.
 
 ```sql
@@ -473,7 +476,7 @@ ORDER BY sensorid, time_stamp;
 
 Comme avec [db_sensor.sql](data/db_sensor.sql) on a généré 100 000 relevés espacés d'environ 1 seconde en tirant au hasard à chaque fois parmi 10 capteurs, on peut vérifier que l'écart moyen de deux relevés du même capteur est de 10 secondes. Voir le fichier [agg_delta_time.sql](queries/agg_delta_time.sql) qui reprend la requête précédente.
 
-On peut aussi avoir besoin de définir la fenêtre elle-même pour typiquement fixer un intervalle sur lequel on souhaite regrouper.
+On peut aussi avoir besoin de définir la fenêtre pour fixer un intervalle sur lequel on souhaite regrouper.
 La fenêtre est par défaut **tous tuples du groupe** défini par `PARTITION BY` s'il n'y a pas de `ORDER BY` et **tous les précédents** quand la fenêtre est ordonnée.
 
 C'est assez complet et parfois subtil.
@@ -499,8 +502,6 @@ EXCLUDE CURRENT ROW
 EXCLUDE GROUP
 EXCLUDE TIES
 EXCLUDE NO OTHERS
-
-The default framing option is RANGE UNBOUNDED PRECEDING, which is the same as RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW. With ORDER BY, this sets the frame to be all rows from the partition start up through the current row's last ORDER BY peer. Without ORDER BY, this means all rows of the partition are included in the window frame, since all rows become peers of the current row.
 ```
 
 #### Exemples de contrôle des fenêtres
@@ -531,12 +532,13 @@ WINDOW w AS (ORDER BY time_stamp ASC RANGE BETWEEN (INTERVAL '1 MINUTE') PRECEDI
 ORDER BY time_stamp;
 ```
 
-Il y a un relevé par seconde environ et à chaque fois la valeur est `mod(i, 60)` donc une fois 60 relevés effectués, la fenêtre glissante va comporter environ 60 relevés comportant tous les nombres entre 0 et 59, la moyenne glissante doit donc être de 29.50 environ. On le vérifie avec [agg_sliding_min.sql](queries/agg_sliding_min.sql).
+Cette dernière requête est assez difficile à écrire en SQL-92.
+Il y a un relevé par seconde environ et à chaque fois la valeur est `mod(i, 60)` donc une fois 60 relevés effectués, la fenêtre glissante va comporter (à peu près) tous les nombres entre 0 et 59, la moyenne glissante doit donc être de 29.50 environ. On le vérifie avec [agg_sliding_min.sql](queries/agg_sliding_min.sql).
 
 #### Comparaison au `JOIN LATERAL`
 
-Par défaut, on ne peut pas faire de sous-requêtes corrélées dans le `FROM`, l'opérateur `JOIN LATERAL` lève cette restriction qui permet de faire des _sous-requêtes latérale_.
-Le principe est, pour chaque tuple de la table de gauche, **calculer la requête qui produit la table de droite en utilisant les valeur du tuple de gauche**.
+Par défaut, on ne peut **pas** faire de sous-requêtes corrélées dans le `FROM`, l'opérateur `JOIN LATERAL` lève cette restriction qui permet de faire des _sous-requêtes latérales_.
+Le principe est, pour chaque tuple de la table de gauche, **on évalue la requête qui produit la table de droite en utilisant les valeur du tuple de gauche**.
 
 Par exemple, le calcul _de la variation de valeur entre un relevé et celui qui le précède immédiatement_ (peu importe le capteur concerné) peut se faire avec `CROSS JOIN LATERAL` après avoir donné un rang aux tuples. Par construction, la valeur de `delta` vaut 59 fois `1` et 1 fois `-59`.
 
@@ -560,7 +562,7 @@ FROM ordered_sensor AS s1 CROSS JOIN LATERAL (
 ;
 ```
 
-On obtient le plan suivant. Pour complétude, on va donner une version n'utilisant pas de `JOIN LATERAL` et s'appuyant sur un produit cartésien et un `GROUP NY` mais elle donnera ici _le même plan_, voir [lag_group_by.sql](queries/lag_group_by.sql).
+On obtient le plan suivant. Pour complétude, on va donner une version n'utilisant pas de `JOIN LATERAL` et s'appuyant sur un produit cartésien et un `GROUP BY` mais elle donnera ici _le même plan_, voir [lag_group_by.sql](queries/lag_group_by.sql).
 
 ```raw
                                          QUERY PLAN
@@ -581,7 +583,7 @@ On obtient le plan suivant. Pour complétude, on va donner une version n'utilisa
                ->  CTE Scan on ordered_sensor s2  (cost=0.00..2000.02 rows=100001 width=40)
 ```
 
-On va faire la même chose avec la _window function_ `lag`, comparer les plans d'exécution et évaluer la performance empirique avec [bench.py](bencher/bench.py). Notons qu'on a pas tout à fait le même résultat de requête : le premier tuple est perdu avec la solution `JOIN LATERAL`. La requête est comme suit :
+On va faire la même chose avec la _window function_ `lag()`, comparer les plans d'exécution et évaluer la performance empirique avec [bench.py](bencher/bench.py). Notons qu'on a pas tout à fait le même résultat de requête : le premier relevé de la liste est perdu avec la solution `JOIN LATERAL`. La requête est comme suit :
 
 ```sql
 SELECT
@@ -593,7 +595,7 @@ WINDOW win AS (ORDER BY time_stamp ASC)
 ORDER BY time_stamp;
 ```
 
-Son plan est particulièrement efficace : il suffit simplement de trier `sensor` puis de faire un parcours où on calcule lla position et une soustraction.
+Son plan est particulièrement efficace : il suffit simplement de trier `sensor` puis de faire un parcours où on calcule la position et une soustraction.
 
 ```raw
                                 QUERY PLAN
@@ -658,7 +660,7 @@ Pour cela, il faut _pivoter_ ce résultat de requête, comme dans l'illustration
 #### Clause `FILTER`
 
 La clause `FILTER` permet de mettre une condition sur les tuples considérés par un agrégat dans le `SELECT`.
-Comme pour le fenêtrage simple, on évite la solution traditionnelle SQL:1992 avec autant de jointures que de colonnes.
+Comme pour le fenêtrage simple, on évite la solution traditionnelle SQL-92 avec autant de jointures que de colonnes.
 On note ici :
 
 - qu'il faut spécifier **statiquement** les colonnes,

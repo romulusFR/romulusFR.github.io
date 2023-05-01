@@ -2,13 +2,13 @@ DROP TABLE IF EXISTS demo;
 
 -- option TEMPORARY pour une relation éphémère.
 CREATE TEMPORARY TABLE demo(
-  id int PRIMARY KEY,
-  name text,
+  demo_id int PRIMARY KEY,
+  demo_name text,
    -- /!\ il est conseillé de toujours spécifier une time zone
-  timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP(0),
+  demo_ts timestamp with time zone DEFAULT CURRENT_TIMESTAMP(0),
   -- /!\ (EXTRACT (epoch FROM timestamp)) sans timezone n'est 
   -- PAS immutable (et donc refusée) car l'évaluation dépend de la locale
-  epoch_utc bigint GENERATED ALWAYS AS (EXTRACT (epoch FROM timestamp at time zone 'UTC')) STORED
+  epoch_utc bigint GENERATED ALWAYS AS (EXTRACT (epoch FROM demo_ts at time zone 'UTC')) STORED
 );
 
 INSERT INTO demo VALUES
