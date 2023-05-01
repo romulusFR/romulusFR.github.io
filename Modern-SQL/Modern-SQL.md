@@ -16,9 +16,9 @@ Support de présentation pour le [café développeur·se LIRIS : SQL moderne](ht
     - [Solution _windows_](#solution-windows)
     - [Performance des fonctions de fenêtrage](#performance-des-fonctions-de-fenêtrage)
     - [Clauses `ORDER BY` et `RANGE/ROWS/GROUP` des fenêtres](#clauses-order-by-et-rangerowsgroup-des-fenêtres)
-  - [Requêtes analytiques](#requêtes-analytiques)
-    - [Codage du pivot](#codage-du-pivot)
-    - [Rregroupement `GROUPING SETS`](#rregroupement-grouping-sets)
+  - [Tableaux de contingences](#tableaux-de-contingences)
+    - [Codage du pivot avec `FILTER` ou `crosstab`](#codage-du-pivot-avec-filter-ou-crosstab)
+    - [Regroupements avec `GROUPING SETS`, `CUBE` et `ROLLUP`](#regroupements-avec-grouping-sets-cube-et-rollup)
   - [Vues, vues récursives et vues matérialisées](#vues-vues-récursives-et-vues-matérialisées)
     - [Les _Common Table Expression_ (CTE)](#les-common-table-expression-cte)
 
@@ -527,6 +527,7 @@ SELECT
     count(*) OVER w AS sliding_size,
     round(avg(value) OVER w, 2) AS sliding_avg
 FROM sensor
+-- le mot clef INTERVAL n'est pas utile
 WINDOW w AS (ORDER BY time_stamp ASC RANGE BETWEEN (INTERVAL '1 MINUTE') PRECEDING AND CURRENT ROW)
 ORDER BY time_stamp;
 ```
@@ -623,7 +624,7 @@ Pairwise (Welch) T-tests
 
 ![Comparaison des requêtes de calcul du delta entre deux temps consécutifs](img/lag_lateral-lag_window.png)
 
-## Requêtes analytiques
+## Tableaux de contingences
 
 Un exemple de requête analytique est celui des [tableaux de contingences](https://en.wikipedia.org/wiki/Contingency_table) qui donnent pour deux variables catégorielles les effectifs concernés.
 Ces représentations sont très utilisées en statistiques.
@@ -631,7 +632,7 @@ On considère comme exemple la requête suivante.
 
 **Requête** : _pour chaque service, compter le nombre d'employés avec un salaire dans l'intervalle [0,1000), ceux dans [1000,2000) etc._.
 
-### Codage du pivot
+### Codage du pivot avec `FILTER` ou `crosstab`
 
 Les _pivots_ sont des opérations typiques OLAP, appelés aussi _tableaux croisés_, qui consistent à créer un tableau 2D avec _une colonne_ **pour chaque valeur** d'un attribut comme dans la requête d'exemple. L'opération `PIVOT` n'existe malheureusement **pas** en SQL.
 On va voir plusieurs façon de pivoter en SQL standard et avec des extensions PostgreSQL.
@@ -722,7 +723,7 @@ SELECT *
 
 Notez les `NULL` représentés ici par `Ø` au lieu des valeurs `0` de la version avec les `FILTER` et surtout la définition du SQL comme argument **textuel** de `crosstab()`.
 
-```bash
+```raw
   depname  | [3000,4000) | [4000,5000) | [5000,6000) | [6000,7000)
 -----------+-------------+-------------+-------------+-------------
  develop   |           Ø |           2 |           2 |           1
@@ -756,34 +757,34 @@ ORDER BY int4slice(salary), depname;
 ```
 
 ```raw
-  depname  | [4000,5000) | [5000,6000) | [6000,7000) | [3000,4000)
+  depname  | [3000,4000) | [4000,5000) | [5000,6000) | [6000,7000)
 -----------+-------------+-------------+-------------+-------------
- develop   |           2 |           2 |           1 |
- personnel |             |             |             |           2
- sales     |           3 |           1 |             |
+ personnel |           2 |             |             |
+ develop   |             |           2 |           2 |           1
+ sales     |             |           3 |           1 |
 ```
 
-### Rregroupement `GROUPING SETS`
+### Regroupements avec `GROUPING SETS`, `CUBE` et `ROLLUP`
 
 Ces opérateurs permettent de spécifier plusieurs dimensions sur lesquelles agréger les données selon **toutes ou parties des dimensions**, là aussi, une opération typique (R)OLAP.
 Par exemple, pour les capteurs de la table ``sensor`, on souhaite calculer la requête suivante, où on ajoute _les sommes marginales_ au tableau 2D précédent.
 
-**Requête** : _calculer le nombre de relevés de chaque heure par capteur, avec aussi le nombre de relevés par heure quel que soit le capteur, le nombre de relevés par capteur quelle que soit l'heure et enfin le nombre total de relevés_.
+**Requête** : _calculer le nombre de relevés de chaque jour par capteur, avec aussi le nombre de relevés par jour quel que soit le capteur, le nombre de relevés par capteur quelle que soit le jour et enfin le nombre total de relevés_.
 
 La solution SQL-92 consisterait à faire l'`UNION` des **quatre agrégats calculés séparément** :
 
 ```sql
 -- chaque capteur / chaque heur
-SELECT sensorid AS sensorid, date_trunc('hour', time_stamp) AS h, count(value) AS nb
+SELECT sensorid AS sensorid, date_trunc('day', time_stamp) AS grp, count(value) AS nb
 FROM sensor
-GROUP BY sensorid, h
+GROUP BY sensorid, grp
 
 UNION
 
 -- tous les capteurs / chaque heur
-SELECT NULL, date_trunc('hour', time_stamp) AS h, count(value)
+SELECT NULL, date_trunc('day', time_stamp) AS grp, count(value)
 FROM sensor
-GROUP BY h
+GROUP BY grp
 
 UNION
 
@@ -795,26 +796,63 @@ GROUP BY sensorid
 UNION
 
 -- tous les capteurs / tous les temps
-SELECT NULL AS sensorid, NULL AS h, count(value) AS nb
+SELECT NULL AS sensorid, NULL AS grp, count(value) AS nb
 FROM sensor
-ORDER BY sensorid NULLS FIRST, h NULLS FIRST;
+ORDER BY sensorid NULLS FIRST, grp NULLS FIRST;
 ```
 
 On voit la difficile duplication de code posée par cette requête.
-Avec les opérateurs `GROUPING SET`, ici l'opérateur `CUBE` en particulier, on va pouvoir **spécifier simultanément plusieurs niveaux d'agrégation**.
-On pourra compléter avec `\crosstabview` pour avoir une représentation en 2D.
+Avec les opérateurs `GROUPING SET` on va pouvoir **spécifier simultanément plusieurs niveaux d'agrégation**.
+L'opérateur `GROUPING SET` permet de spécifier _plusieurs_ `GROUP BY`.
+L'opérateur `CUBE`, qui nous intéresse ici, va prendre un ensemble de groupements et faire tous les regroupements de l'ensemble des parties.
+`ROLLUP` agit similairement mais avec les préfixes d'une liste ordonnés, il est plutôt destiné à travailler sur une seule hiérarchie que sur plusieurs.
 
 ```sql
+-- avec CUBE on a toutes sommes marginales
 SELECT
     sensorid AS sensorid,
-    date_trunc('hour', time_stamp) AS h,
+    date_trunc('day', time_stamp)::date AS grp,
     count(value) AS nb
 FROM sensor
-GROUP BY CUBE(sensorid, h)
-ORDER BY sensorid NULLS FIRST, h NULLS FIRST;
+GROUP BY CUBE(sensorid, grp)
+ORDER BY sensorid NULLS FIRST, grp NULLS FIRST;
+
+
+-- variante avec GROUPING SETS ou le power set est explicité
+SELECT
+    sensorid AS sensorid,
+    date_trunc('day', time_stamp)::date AS grp,
+    count(value) AS nb
+FROM sensor
+GROUP BY GROUPING SETS (
+    ( ),
+    (sensorid),
+    (grp),
+    (sensorid, grp)
+)
+ORDER BY sensorid NULLS FIRST, grp NULLS FIRST;
 ```
 
-Au niveau des performance, il ne faut pas espérer de gains, c'est surtout la simplification de l'écriture et la suppression des copies de code qu'on espère.
+On pourra compléter avec `\crosstabview` pour avoir une représentation en 2D pour avoir le résultat comme suit.
+
+```raw
+ sensorid |        | 2023-05-01 | 2023-05-02
+----------+--------+------------+------------
+          | 100001 |      49890 |      50111
+        0 |   9842 |       4878 |       4964
+        1 |  10037 |       4993 |       5044
+        2 |   9868 |       4921 |       4947
+        3 |  10001 |       5023 |       4978
+        4 |   9860 |       4941 |       4919
+        5 |  10089 |       4960 |       5129
+        6 |  10230 |       5122 |       5108
+        7 |  10001 |       4964 |       5037
+        8 |  10138 |       5159 |       4979
+        9 |   9935 |       4929 |       5006
+```
+
+Au niveau des performances, la solution `CUBE` est légèrement plus efficace mais il ne faut pas espérer de gains substantiels, car c'est sur le produit cartésien _central_ du tableau de contingence que l'essentiel des calculs est fait, les sommes marginales représentant une fraction de ce coût.
+En revanche **l'écriture de la requête est simplifiée car on évite la duplication de code**.
 
 ```raw
 python3 bench.py --repeat 100 -v ../queries/cube_grouping.sql ../queries/cube_union.sql
@@ -829,18 +867,17 @@ Pairwise (Welch) T-tests
 
 ## Vues, vues récursives et vues matérialisées
 
-Les vue ne sont pas particulièrement _modernes_ mais _très utilisées_. En revanche leur extension au requêtes récursives est moins connue.
-
+Les vues ne sont pas particulièrement _modernes_ mais _très utilisées_. En revanche leur extension au requêtes récursives est moins connue.
 Une vue est _une requête à laquelle on a donné un nom_ et qui s'utilise _comme une table_, en refaisant le calcul (s'il n'est ni dans le cache ni matérialisé). On peut **matérialiser la vue**, auquel cas la vue devient _vraiment_ une table avec des tuples **persistants**. Dans ce cas là il faut _rafraîchir_ la vue quand les données sources change et mettre à jour la table de stockage avec la commande [`REFRESH MATERIALIZED VIEW`](https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html).
 
 Des cas d'usages des vues sont :
 
 - fournir une **interface** au client, s'abstraire des tables concrètes,
-- **contrôler les accès** en limitant les colonnes ou lignes accessibles,
-- **factoriser** les requêtes fréquentes,
+- **contrôler les accès** en limitant les colonnes accessibles (on peut filtrer des lignes statiquement, mais pour un filtrage dynamique il faudra utiliser [_Row Security Policies_](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)),
+- **factoriser** les requêtes fréquentes, comme avec les CTE mais sur plusieurs requêtes,
 - assurer la **performance** des requêtes analytiques via la matérialisation.
 
-Par exemple une vue sur les services de la base RH :
+Par exemple une vue sur les services de la base RH qui complète les service avec leur nombre d'employés :
 
 ```sql
 DROP VIEW IF EXISTS dep_summary;
@@ -867,13 +904,13 @@ Avec la clause `WITH RECURSIVE` on peut construire des vues qui font référence
 #### CTE non récursives
 
 On a montré un exemple de `MATERIALIZED` dans [agg_group_by_materialized.sql](queries/agg_group_by_materialized.sql).
-Dans l'exemple suivant, `small_dep` est une _vue_ locale, dont la définition sera utilisée soit :
+Dans l'exemple suivant, `small_dep` est une _vue_ locale des services avec 1 ou 2 employés, dont la définition sera soit :
 
-- `[NOT MATERIALIZED]` est une clause optionnelle, où la CTE est _dépliée_ lors de l'évaluation de la requête, sa définition est injectée dans la requête englobante et l'optimisation est faite globalement avant exécution;
-- `MATERIALIZED`, les évaluations sont séquentielles : on évalue la sous-requête, puis la requête englobante qui utilise le résultat qui a été enregistré.
+- `[NOT MATERIALIZED]` est une clause optionnelle, où la CTE est _dépliée_ lors de l'évaluation de la requête, sa définition est injectée dans la requête englobante et l'optimisation est faite globalement avant exécution, fichier [cte_not_materialized.sql](queries/cte_not_materialized.sql);
+- `MATERIALIZED`, les évaluations sont séquentielles : on évalue la sous-requête, puis la requête englobante qui utilise le résultat qui a été enregistré, fichier [cte_materialized.sql](queries/cte_materialized.sql).
 
 ```sql
-EXPLAIN
+-- EXPLAIN
 WITH small_dep AS NOT MATERIALIZED (
   SELECT depname
   FROM dep LEFT OUTER JOIN emp USING (depname)
@@ -885,7 +922,7 @@ WITH small_dep AS NOT MATERIALIZED (
 SELECT emp.*
 FROM emp JOIN small_dep USING (depname);
 
-EXPLAIN
+-- EXPLAIN
 WITH small_dep AS MATERIALIZED (
   SELECT depname
   FROM dep LEFT OUTER JOIN emp USING (depname)
@@ -938,6 +975,8 @@ Les plans de ces deux requêtes sont les suivants
          ->  CTE Scan on small_dep  (cost=0.00..0.02 rows=1 width=32)
 ```
 
+Sur cet exemple, il n'y a pas de différence de temps d'exécution.
+
 #### CTE récursives
 
 On peut définir des vues qui **font référence à elles-mêmes** et permettent de calculer des résultats _impossibles à calculer_ en SQL sans récursion, comme _la fermeture transitive_ d'une relation.
@@ -965,7 +1004,7 @@ De base, la relation `dep` est comme suit :
 On construit la vue récursive, avec deux cas :
 
 - **le cas de base**, si `e` est un _enfant_ de `p`, alors `e` est un _descendant_ de `p` : c'est le contenu de la table `dep`, les enfants immédiats;
-- **le cas récursif**, si `e` est un _enfant_ de `p` et que `p` est un **descendant** de `gp`, alors `e` est un _descendant_ de `gp`.
+- **le cas récursif**, si `e` est un _enfant_ de `p` **et** que `p` est un _descendant_ de `gp`, alors `e` est un _descendant_ de `gp`.
 
 ```sql
 WITH RECURSIVE dep_rec(depname, parent) AS (
@@ -983,7 +1022,7 @@ SELECT * FROM dep_rec
 ORDER BY depname, parent;
 ```
 
-Si on utilise souvent la table `dep_rec`, on aura très envie d'en faire une vue (récursive), possiblement matérialisée.
+Si on utilise souvent la table `dep_rec`, on aura très envie d'en faire une vue (récursive), possiblement matérialisée comm suit.
 
 ```sql
 DROP VIEW IF EXISTS dep_trans;
@@ -1015,34 +1054,36 @@ CREATE MATERIALIZED VIEW dep_trans_m AS(
 );
 ```
 
-#### Exercices
+#### Exemples
 
-Écrire les requêtes suivantes :
+On donne les requêtes suivantes d'exemple.
 
-- pour chaque service, calculer les sous-services qui en dépendent transitivement en comptant aussi **la profondeur** depuis `direction`.
-- donner pour chaque service, le salaire min et le salaire max de tous les subordonnés (transitivement).
-  - _Indice_ pour le service `direction` on doit avoir le min et le max de l'ensemble de la société.
-- donner pour chaque service, le nombre total d'employés qui en dépendent transitivement.
-  - _Indice_ calculer d'abord la table suivante puis utiliser la requête récursive.
-  - Vérifier le comportement en ajoutant un tuple.
-  - Penser à la réflexivité de la relation `dep_hierarchy`
+**Requête** : _pour chaque service, calculer les sous-services qui en dépendent transitivement en comptant aussi **la profondeur** depuis `direction`_. Vérifier le comportement si on modifie la racine avec `UPDATE dep SET parent = 'direction' WHERE depname = 'direction';`. Voir [cte_dep_depth.sql](queries/cte_dep_depth.sql).
 
-```sql
-INSERT INTO emp VALUES
-    ('team 1'   , 13, 5200);
+**Requête** : _calculer pour chaque service, le salaire min et le salaire max de tous les subordonnés (transitivement)._ _Indice_ pour le service `direction` on doit avoir le min et le max globaux de l'ensemble de la société. Le résultat est comme suit. Voir [](queries/cte_dep_min_max.sql)
+
+```raw
+   parent   | min  | max
+------------+------+------
+ develop    | 4200 | 6000
+ direction  | 3500 | 6000
+ personnel  | 3500 | 3900
+ production | 4200 | 6000
+ sales      | 4200 | 5000
 ```
 
-On doit avoir pour le nombre d'employés directs
+**Requête** : _calculer pour chaque service, le nombre total d'employés qui en dépendent **transitivement**._ _Indice_ calculer d'abord la table suivante puis utiliser la requête récursive et penser à la réflexivité de la relation `dep_hierarchy` (profondeur 0). Vérifier le comportement en ajoutant un tuple. On doit avoir pour le nombre d'employés directs sur la base d'exemple comme suite. Voir [cte_dep_nb_emp.sql](queries/cte_dep_nb_emp.sql).
 
 ```raw
    depname   | nb
 -------------+----
  develop     |  5
+ direction   |  0
  maintenance |  0
  personnel   |  2
  production  |  0
  sales       |  4
- team 1      |  1
+ team 1      |  0
  team 2      |  0
 ```
 
