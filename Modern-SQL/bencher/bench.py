@@ -48,10 +48,12 @@ logger = logging.getLogger("PERF")
 
 # charge les variables d'environnement, par défaut dans le fichier `.env`
 config = dotenv_values(".env")
-options = urllib.parse.quote_plus("--search_path={config['SCHEMA']},public")
+# options = urllib.parse.quote_plus("--search_path={config['SCHEMA']},public")
 
 # https://dba.stackexchange.com/questions/171855/how-to-set-a-search-path-default-on-a-psql-cmd-execution
-CONN_PARAMS = f"postgresql://{config['USER']}:{config['PASSWORD']}@{config['HOST']}:{config['PORT']}/{config['DATABASE']}?options={options}"  # pylint: disable=line-too-long
+# BUG : suppression de l'info de chemin ?options={options}
+CONN_PARAMS = f"postgresql://{config['USER']}:{config['PASSWORD']}@{config['HOST']}:{config['PORT']}/{config['DATABASE']}"  # pylint: disable=line-too-long
+
 
 # to be added to each query
 EXPLAIN = "EXPLAIN (ANALYZE, TIMING, FORMAT JSON) "
@@ -135,7 +137,7 @@ def do_sync(queries: dict[str, str], repeat):
         with conn.cursor() as cur:
             for filename, query in queries.items():
                 for i in tqdm(range(repeat), postfix=filename):
-                    logger.debug("SYNChronous query #%i", i)
+                    # logger.debug("SYNChronous query #%i", i)
                     cur.execute(EXPLAIN + query)
                     res_time = cur.fetchone()[0][0]["Execution Time"]  # type: ignore
                     res[filename].append(res_time)
@@ -153,14 +155,14 @@ async def do_async(queries: dict[str, str], repeat):
             async with aconn.cursor() as cur:
                 local_times = []
                 for i in atqdm(range(repeat), postfix=filename):
-                    logger.debug("ASYNChronous query #%i for '%s'", i, filename)
+                    # logger.debug("ASYNChronous query #%i for '%s'", i, filename)
                     await cur.execute(EXPLAIN + query)
                     data = await cur.fetchone()
                     local_times.append(data[0][0]["Execution Time"])
                 return filename, local_times
 
     res = await asyncio.gather(*[async_job(f, q) for (f, q) in queries.items()])
-    logger.debug(pformat(res))
+    # logger.debug(pformat(res))
     return dict(res)
 
 
@@ -172,7 +174,7 @@ async def do_async_full(queries: dict[str, str], repeat):
     async def async_job(filename, query, id_job=-1):
         async with pool.connection() as aconn:
             async with aconn.cursor() as cur:
-                logger.debug("ASYNChronous query #%i for '%s'", id_job, filename)
+                # logger.debug("ASYNChronous query #%i for '%s'", id_job, filename)
                 await cur.execute(EXPLAIN + query)
                 data = await cur.fetchone()
                 return filename, data[0][0]["Execution Time"]
@@ -259,7 +261,8 @@ def print_stats(results: dict[str, list[float]]):
     max_length = max(len(filename) for filename in results.keys())
     for key, vals in results.items():
         print(f"{key:<{max_length}} {summary_stats(vals)}")
-        logger.debug(pformat(vals))
+    for key, vals in results.items():
+        logger.debug("%s: %s", key, vals)
 
     if len(results) > 1:
         print("Pairwise (Welch) T-tests")
@@ -277,10 +280,11 @@ def print_stats(results: dict[str, list[float]]):
             f"{n_a:<{max_length}} < {n_b:<{max_length}}: pvalue = {pval_less:.2%} ({pretty_pvalue(pval_less)}) (!= {pval_diff:.2%})"
         )
 
-    pval_mood = median_test(*results.values()).pvalue
-    pval_kruskal = kruskal(*results.values()).pvalue
-    print(
-        f"Median tests: Mood = {pval_mood:.2%} ({pretty_pvalue(pval_mood)}), Kruskal = {pval_kruskal:.2%} ({pretty_pvalue(pval_kruskal)})"
+    if len(results) > 1:
+        pval_mood = median_test(*results.values()).pvalue
+        pval_kruskal = kruskal(*results.values()).pvalue
+        print(
+            f"Median tests: Mood = {pval_mood:.2%} ({pretty_pvalue(pval_mood)}), Kruskal = {pval_kruskal:.2%} ({pretty_pvalue(pval_kruskal)})"
     )
 
 

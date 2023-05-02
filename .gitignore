@@ -14,6 +14,7 @@ index.pdf
 *.back*
 
 .env
+.env.*
 backup
 .vscode
 
