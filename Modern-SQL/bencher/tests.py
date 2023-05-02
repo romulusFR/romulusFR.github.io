@@ -89,5 +89,11 @@ names = ["../queries/agg_windows.sql", "../queries/agg_group_by.sql", "../querie
 name = f"{'-'.join(Path(k).stem for k in names)}.png"
 # [Path(f).stem for f in names]
 
+# %%
+df = pd.read_csv("output/cte_materialized-cte_not_materialized.csv", index_col=0)
+sns.histplot(df)
 
+# %%
+meanprops = {"marker": "o", "markerfacecolor": "white", "markeredgecolor": "black", "markersize": "10"}
+the_boxplot = sns.boxplot(df, showmeans=True, meanprops=meanprops)
 # %%

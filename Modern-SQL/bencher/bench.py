@@ -28,16 +28,18 @@ import logging
 import statistics as stat
 import urllib.parse
 from collections import defaultdict
-from itertools import product, combinations
+from itertools import combinations, product
 from pathlib import Path
 from pprint import pformat
-from time import perf_counter, time
+from time import time  # perf_counter
 from typing import DefaultDict
 
+import pandas as pd
 import psycopg
+import seaborn as sns
 from dotenv import dotenv_values
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
-from scipy.stats import chisquare, ttest_ind, median_test
+from scipy.stats import kruskal, median_test, ttest_ind
 from tqdm import tqdm
 from tqdm.asyncio import tqdm as atqdm
 
@@ -50,6 +52,9 @@ options = urllib.parse.quote_plus("--search_path={config['SCHEMA']},public")
 
 # https://dba.stackexchange.com/questions/171855/how-to-set-a-search-path-default-on-a-psql-cmd-execution
 CONN_PARAMS = f"postgresql://{config['USER']}:{config['PASSWORD']}@{config['HOST']}:{config['PORT']}/{config['DATABASE']}?options={options}"  # pylint: disable=line-too-long
+
+# to be added to each query
+EXPLAIN = "EXPLAIN (ANALYZE, TIMING, FORMAT JSON) "
 
 
 def get_parser():
@@ -101,6 +106,23 @@ def get_parser():
         type=int,
         help="nombre de répétitions",
     )
+
+    parser.add_argument(
+        "--save-fig",
+        "-f",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="sauvegarde un boxplot PNG des mesures.",
+    )
+
+    parser.add_argument(
+        "--save-csv",
+        "-c",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="sauvegarde un fichier CSV des mesures.",
+    )
+
     return parser
 
 
@@ -175,9 +197,6 @@ async def do_async_full(queries: dict[str, str], repeat):
     return res
 
 
-EXPLAIN = "EXPLAIN (ANALYZE, TIMING, FORMAT JSON) "
-
-
 def read_sql_files(filenames):
     """Reads files and returns (SQL) contents"""
 
@@ -211,7 +230,58 @@ def pretty_pvalue(pvalue):
     return "NS"
 
 
-# %%
+def do_measures(sql_contents: dict[str, str], repeat: int = 20, with_async: bool = False, full_async: bool = False):
+    """Launch experiments. Wraps do_async_full/do_async/do_sync methods
+
+    sql_contents is a dict with filenames as key and sql content as values
+    """
+    start_time = time()
+    if with_async:
+        if full_async:
+            results = asyncio.run(do_async_full(sql_contents, repeat))
+        else:
+            results = asyncio.run(do_async(sql_contents, repeat))
+    else:
+        results = do_sync(sql_contents, repeat)
+    end_time = time()
+
+    logger.info("Total running time %.2f for %i queries", end_time - start_time, len(sql_contents) * repeat)
+
+    return results
+
+
+def print_stats(results: dict[str, list[float]]):
+    """Computes and print statistics from runs.
+
+    results is a dict with filenames as key and a list of measaures as values"""
+
+    print("Statistics for each file")
+    max_length = max(len(filename) for filename in results.keys())
+    for key, vals in results.items():
+        print(f"{key:<{max_length}} {summary_stats(vals)}")
+        logger.debug(pformat(vals))
+
+    if len(results) > 1:
+        print("Pairwise (Welch) T-tests")
+    for (n_a, v_a), (n_b, v_b) in combinations(results.items(), 2):
+        # means
+        m_a, m_b = stat.mean(v_a), stat.mean(v_b)
+        # reorder if needed so m_a < m_b
+        if m_b < m_a:
+            (n_a, v_a), (n_b, v_b) = (n_b, v_b), (n_a, v_a)
+            m_a, m_b = m_b, m_a
+        pval_less = ttest_ind(v_a, v_b, equal_var=False, alternative="less").pvalue
+        pval_diff = ttest_ind(v_a, v_b, equal_var=False, alternative="two-sided").pvalue
+
+        print(
+            f"{n_a:<{max_length}} < {n_b:<{max_length}}: pvalue = {pval_less:.2%} ({pretty_pvalue(pval_less)}) (!= {pval_diff:.2%})"
+        )
+
+    pval_mood = median_test(*results.values()).pvalue
+    pval_kruskal = kruskal(*results.values()).pvalue
+    print(
+        f"Median tests: Mood = {pval_mood:.2%} ({pretty_pvalue(pval_mood)}), Kruskal = {pval_kruskal:.2%} ({pretty_pvalue(pval_kruskal)})"
+    )
 
 
 def main():
@@ -239,48 +309,21 @@ def main():
         for key, content in sql_contents.items():
             logger.debug("file %s\n%s", key, content)
 
-    start_time = time()
-    if args.with_async:
-        if args.full_async:
-            results = asyncio.run(do_async_full(sql_contents, args.repeat))
-        else:
-            results = asyncio.run(do_async(sql_contents, args.repeat))
-    else:
-        results = do_sync(sql_contents, args.repeat)
-    end_time = time()
+    the_results = do_measures(sql_contents, args.repeat, args.with_async, args.full_async)
+    print_stats(the_results)
+    the_df = pd.DataFrame(the_results)
+    the_filename = f"{'-'.join(Path(k).stem for k in the_df.columns)}"
 
-    logger.info("Total running time %.2f for %i queries", end_time - start_time, len(sql_contents) * args.repeat)
-
-    print("Statistics for each file")
-    max_length = max(len(filename) for filename in args.filenames)
-    for key, vals in results.items():
-        print(f"{key:<{max_length}} {summary_stats(vals)}")
-        logger.debug(pformat(vals))
-
-    if len(results) > 1:
-        print("Pairwise (Welch) T-tests")
-    for (n_a, v_a), (n_b, v_b) in combinations(results.items(), 2):
-        m_a, m_b = stat.mean(v_a), stat.mean(v_b)
-        # reorder if needed
-        if m_b < m_a:
-            (n_a, v_a), (n_b, v_b) = (n_b, v_b), (n_a, v_a)
-            m_a, m_b = m_b, m_a
-        pval_less = ttest_ind(v_a, v_b, equal_var=False, alternative="less").pvalue
-        pval_diff = ttest_ind(v_a, v_b, equal_var=False, alternative="two-sided").pvalue
-
-        print(
-            f"{n_a:<{max_length}} < {n_b:<{max_length}}: pvalue = {pval_less:.2%} ({pretty_pvalue(pval_less)}) (!= {pval_diff:.2%})"
-        )
-
-    return results
+    output_dir = Path("output/")
+    if args.save_fig or args.save_csv:
+        output_dir.mkdir(exist_ok = True)
+    if args.save_fig:
+        meanprops = {"marker": "o", "markerfacecolor": "white", "markeredgecolor": "black", "markersize": "10"}
+        the_boxplot = sns.boxplot(the_df, showmeans=True, meanprops=meanprops)
+        the_boxplot.figure.savefig(output_dir / f"{the_filename}.png", dpi=300)
+    if args.save_csv:
+        the_df.to_csv(output_dir / f"{the_filename}.csv")
 
 
 if __name__ == "__main__":
-    the_results = main()
-
-    # import pandas
-    # import seaborn as sns
-    # the_df = pandas.DataFrame({Path(k).stem: vals for k, vals in the_results.items()})
-    # the_boxplot = sns.boxplot(the_df)
-    # the_fig_filename = f"{'-'.join(Path(k).stem for k in the_df.columns)}.png"
-    # the_boxplot.figure.savefig(the_fig_filename, dpi=300)
+    main()
