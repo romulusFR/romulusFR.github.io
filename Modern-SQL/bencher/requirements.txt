@@ -3,3 +3,5 @@ psycopg
 psycopg_pool
 tqdm
 scipy
+pandas
+seaborn

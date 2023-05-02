@@ -97,3 +97,18 @@ sns.histplot(df)
 meanprops = {"marker": "o", "markerfacecolor": "white", "markeredgecolor": "black", "markersize": "10"}
 the_boxplot = sns.boxplot(df, showmeans=True, meanprops=meanprops)
 # %%
+
+#
+from scipy.stats import norm
+import numpy as np
+# %%
+
+
+df["lognormal"] = np.log(df[df.columns[0]])
+df
+# %%
+# sns.boxplot(df["lognormal"])
+sns.histplot(df["lognormal"])
+df    # %%
+
+# %%
