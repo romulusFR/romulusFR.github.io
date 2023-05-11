@@ -7,12 +7,13 @@ python3 -m pip install -r requirements.txt
 
 Ensuite, créer un fichier .env dans le même dossier que bench.py avec le contenu suivant
 
-USER=cafe
-PASSWORD=cafe
-HOST=localhost
-PORT=5432
-DATABASE=cafe
-SCHEMA=cafe
+PGUSER=cafe
+PGPASSWORD=cafe
+PGHOST=localhost
+PGPORT=5432
+PGDATABASE=cafe
+PGSCHEMA=cafe
+PGAPPNAME=py-sql-bencher
 
 Exécuter par exemple
 
@@ -26,12 +27,11 @@ import argparse
 import asyncio
 import logging
 import statistics as stat
-import urllib.parse
 from collections import defaultdict
-from itertools import combinations, product
+from itertools import combinations
 from pathlib import Path
-from pprint import pformat
-from time import time  # perf_counter
+from random import sample
+from time import time
 from typing import DefaultDict
 
 import pandas as pd
@@ -43,17 +43,14 @@ from scipy.stats import kruskal, median_test, ttest_ind
 from tqdm import tqdm
 from tqdm.asyncio import tqdm as atqdm
 
+# logger
 logger = logging.getLogger("PERF")
-
 
 # charge les variables d'environnement, par défaut dans le fichier `.env`
 config = dotenv_values(".env")
-# options = urllib.parse.quote_plus("--search_path={config['SCHEMA']},public")
 
-# https://dba.stackexchange.com/questions/171855/how-to-set-a-search-path-default-on-a-psql-cmd-execution
-# BUG : suppression de l'info de chemin ?options={options}
-CONN_PARAMS = f"postgresql://{config['USER']}:{config['PASSWORD']}@{config['HOST']}:{config['PORT']}/{config['DATABASE']}"  # pylint: disable=line-too-long
-
+# postgres connection string, les variables d'environnement ne sont pas prises directement
+CONN_PARAMS = f"postgresql://{config['PGUSER']}:{config['PGPASSWORD']}@{config['PGHOST']}:{config['PGPORT']}/{config['PGDATABASE']}?application_name={config['PGAPPNAME']}"  # pylint: disable=line-too-long
 
 # to be added to each query
 EXPLAIN = "EXPLAIN (ANALYZE, TIMING, FORMAT JSON) "
@@ -88,7 +85,7 @@ def get_parser():
         "--full",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="active le mode asynchrone entièrement en parallèle, à ajouter à --async, pas d'effet sinon.",
+        help="active le mode asynchrone entièrement en parallèle avec mélange de l'ordre des requêtes, à ajouter à --async, pas d'effet sinon.",
         dest="full_async",
     )
 
@@ -136,13 +133,23 @@ def do_sync(queries: dict[str, str], repeat):
     with pool.connection() as conn:
         with conn.cursor() as cur:
             for filename, query in queries.items():
-                for i in tqdm(range(repeat), postfix=filename):
+                for _ in tqdm(range(repeat), postfix=filename):
                     # logger.debug("SYNChronous query #%i", i)
                     cur.execute(EXPLAIN + query)
                     res_time = cur.fetchone()[0][0]["Execution Time"]  # type: ignore
                     res[filename].append(res_time)
                 logger.info("...%s done", filename)
     return res
+
+
+# remarque
+# avec les boucles suivantes, c'est un lancement async sur la même connection !
+# pas de // effective de PG : il faut passer dans la task. Mais on reste async
+
+# async with pool.connection() as aconn:
+#     for filename in filenames:
+#         async with aconn.cursor() as cur:
+#             res_times = await atqdm.gather(*[async_job(cur, i) for i in range(repeat)])
 
 
 async def do_async(queries: dict[str, str], repeat):
@@ -154,7 +161,7 @@ async def do_async(queries: dict[str, str], repeat):
         async with pool.connection() as aconn:  # HERE
             async with aconn.cursor() as cur:
                 local_times = []
-                for i in atqdm(range(repeat), postfix=filename):
+                for _ in atqdm(range(repeat), postfix=filename):
                     # logger.debug("ASYNChronous query #%i for '%s'", i, filename)
                     await cur.execute(EXPLAIN + query)
                     data = await cur.fetchone()
@@ -162,7 +169,6 @@ async def do_async(queries: dict[str, str], repeat):
                 return filename, local_times
 
     res = await asyncio.gather(*[async_job(f, q) for (f, q) in queries.items()])
-    # logger.debug(pformat(res))
     return dict(res)
 
 
@@ -171,27 +177,20 @@ async def do_async_full(queries: dict[str, str], repeat):
     res: DefaultDict[str, list[float]] = defaultdict(list)
     pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, 20))
 
-    async def async_job(filename, query, id_job=-1):
+    async def async_job(filename, query):
         async with pool.connection() as aconn:
             async with aconn.cursor() as cur:
-                # logger.debug("ASYNChronous query #%i for '%s'", id_job, filename)
+                # logger.debug("ASYNChronous query from '%s'", filename)
                 await cur.execute(EXPLAIN + query)
                 data = await cur.fetchone()
                 return filename, data[0][0]["Execution Time"]
 
-    # async with await psycopg.AsyncConnection.connect(CONN_PARAMS) as aconn:
-
-    # avec ces boucles, c'est un lancement async sur la même connection : pas de // effective de PG
-    # il faut passer dans la task
-
-    # async with pool.connection() as aconn:
-    #     for filename in filenames:
-    #         async with aconn.cursor() as cur:
-    #             res_times = await atqdm.gather(*[async_job(cur, i) for i in range(repeat)])
+    # each query "q" from file "f" is repeated "repeat" times
+    all_queries = [(f, q) for (f, q) in queries.items() for _ in range(repeat)]
 
     # tqdm overload of asyncio.gather
     res_times = await atqdm.gather(
-        *[async_job(f, q, i) for (f, q), i in product(queries.items(), range(repeat))], total=len(queries) * repeat
+        *[async_job(f, q) for (f, q) in sample(all_queries, k=len(all_queries))], total=len(all_queries)
     )
     for filename, times in res_times:
         res[filename].append(times)
@@ -247,7 +246,9 @@ def do_measures(sql_contents: dict[str, str], repeat: int = 20, with_async: bool
         results = do_sync(sql_contents, repeat)
     end_time = time()
 
-    logger.info("Total running time %.2f for %i queries", end_time - start_time, len(sql_contents) * repeat)
+    duration = end_time - start_time
+    nb_queries = len(sql_contents) * repeat
+    logger.info("Total running time %.2f s for %i queries: %.2f ms by query (w/ parallelism)", duration, nb_queries, 1000*duration / nb_queries)
 
     return results
 
@@ -261,8 +262,8 @@ def print_stats(results: dict[str, list[float]]):
     max_length = max(len(filename) for filename in results.keys())
     for key, vals in results.items():
         print(f"{key:<{max_length}} {summary_stats(vals)}")
-    for key, vals in results.items():
-        logger.debug("%s: %s", key, vals)
+    # for key, vals in results.items():
+    #     logger.debug("%s: %s", key, vals)
 
     if len(results) > 1:
         print("Pairwise (Welch) T-tests")
@@ -285,7 +286,7 @@ def print_stats(results: dict[str, list[float]]):
         pval_kruskal = kruskal(*results.values()).pvalue
         print(
             f"Median tests: Mood = {pval_mood:.2%} ({pretty_pvalue(pval_mood)}), Kruskal = {pval_kruskal:.2%} ({pretty_pvalue(pval_kruskal)})"
-    )
+        )
 
 
 def main():
@@ -320,7 +321,7 @@ def main():
 
     output_dir = Path("output/")
     if args.save_fig or args.save_csv:
-        output_dir.mkdir(exist_ok = True)
+        output_dir.mkdir(exist_ok=True)
     if args.save_fig:
         meanprops = {"marker": "o", "markerfacecolor": "white", "markeredgecolor": "black", "markersize": "10"}
         the_boxplot = sns.boxplot(the_df, showmeans=True, meanprops=meanprops)
