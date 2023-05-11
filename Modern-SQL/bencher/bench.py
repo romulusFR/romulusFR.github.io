@@ -52,9 +52,11 @@ config = dotenv_values(".env")
 # postgres connection string, les variables d'environnement ne sont pas prises directement
 CONN_PARAMS = f"postgresql://{config['PGUSER']}:{config['PGPASSWORD']}@{config['PGHOST']}:{config['PGPORT']}/{config['PGDATABASE']}?application_name={config['PGAPPNAME']}"  # pylint: disable=line-too-long
 
+# maximum number of parallel connection by psycopg
+MAX_PARALLEL_CONN = 16
+
 # to be added to each query
 EXPLAIN = "EXPLAIN (ANALYZE, TIMING, FORMAT JSON) "
-
 
 def get_parser():
     """Configuration de argparse pour les options de ligne de commandes"""
@@ -155,7 +157,7 @@ def do_sync(queries: dict[str, str], repeat):
 async def do_async(queries: dict[str, str], repeat):
     """version ASYNC, parallélisation = nb requêtes"""
     res: DefaultDict[str, list[float]] = defaultdict(list)
-    pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, 20))
+    pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, MAX_PARALLEL_CONN))
 
     async def async_job(filename, query):
         async with pool.connection() as aconn:  # HERE
@@ -175,7 +177,7 @@ async def do_async(queries: dict[str, str], repeat):
 async def do_async_full(queries: dict[str, str], repeat):
     """version ASYNC, parallélisation = nb requêtes * répétitions"""
     res: DefaultDict[str, list[float]] = defaultdict(list)
-    pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, 20))
+    pool = AsyncConnectionPool(CONN_PARAMS, min_size=0, max_size=min(repeat, MAX_PARALLEL_CONN))
 
     async def async_job(filename, query):
         async with pool.connection() as aconn:
