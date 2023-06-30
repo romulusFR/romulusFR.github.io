@@ -206,7 +206,7 @@ def read_sql_files(filenames):
     for filename in filenames:
         with open(filename, "r", encoding="utf-8") as file:
             logger.info("loading %s...", filename)
-            yield filename, file.read()
+            yield Path(filename).name, file.read()
 
 
 def summary_stats(vals):
