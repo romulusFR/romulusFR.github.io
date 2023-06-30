@@ -11,11 +11,8 @@
 *~
 
 index.pdf
-*.back*
 
-.env
-.env.*
+*.back*
 backup
 .vscode
 
-Modern-SQL/bencher/output/
