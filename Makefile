@@ -5,7 +5,6 @@ index.html: index.tex
 
 
 CV.pdf: CV.tex
-#rubber -v --warn all --force --pdf $<
 	latexmk -v --warn all --force --pdf $<
 
 CV.html: CV.tex
